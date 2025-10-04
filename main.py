@@ -20,7 +20,7 @@ def busca_dados_github():
 
         print(f"Número total de issues coletadas: {len(issues)}")
 
-        # PEGAR AS PULL REQUESTS
+        # PEGAR AS PULL REQUESTS 
     except requests.exceptions.RequestException as e:
         print(f"Erro ao fazer a requisição: {e}")
         return issues, pull_requests, comments

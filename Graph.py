@@ -76,7 +76,7 @@ class Node:
         self.id = id
         self.adjacents = []
         self.weight = 0.0
-        self.in_degree = 0
+        self.in_degree = 0 
         self.out_degree = 0
 
     def add_adjacent(self, node: 'Node') -> None:
