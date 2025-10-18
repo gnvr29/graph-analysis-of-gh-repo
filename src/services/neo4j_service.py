@@ -105,4 +105,4 @@ class Neo4jService:
             return
 
         with self.driver.session() as session:
-            session.write_transaction(self._create_issue_and_comments_transaction, issue_data)
+            session.execute_write(self._create_issue_and_comments_transaction, issue_data)

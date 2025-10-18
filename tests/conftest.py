@@ -11,6 +11,8 @@ def neo4j_service():
     Assegura que a conexão seja fechada após todos os testes do módulo.
     """
     try:
+        print("\nIniciando Neo4jService para testes...")
+        print(NEO4J_URI)
         service = Neo4jService(NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD)
         yield service 
     except Exception as e:

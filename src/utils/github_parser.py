@@ -1,3 +1,6 @@
+import json
+from bs4 import BeautifulSoup
+
 def html_to_json(response):
     """
     Extrai o JSON embutido de uma resposta HTML do GitHub.

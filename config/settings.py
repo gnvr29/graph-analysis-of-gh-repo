@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configurações do Neo4j
 NEO4J_URI = os.getenv("NEO4J_URI")
