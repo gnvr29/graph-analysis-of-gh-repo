@@ -7,7 +7,6 @@ def busca_dados_github():
     issues = []
     totalIssues = 0
     pull_requests = []
-    comments = []
 
     try:
         data = coleta_issues()
@@ -16,9 +15,9 @@ def busca_dados_github():
 
         issues_per_page = 25
 
-        # if totalIssues > len(issues):
-            # print(f"Coletando issues restantes das páginas 2 em diante...")
-            # issues.extend(coleta_issues(total_issues=totalIssues, issues_per_page=issues_per_page).get('issues', []))
+        if totalIssues > len(issues):
+            print(f"Coletando issues restantes das páginas 2 em diante...")
+            issues.extend(coleta_issues(total_issues=totalIssues, issues_per_page=issues_per_page).get('issues', []))
         
         print(f"Número total de issues coletadas: {len(issues)}")
 
@@ -35,12 +34,12 @@ def busca_dados_github():
 
     except requests.exceptions.RequestException as e:
         print(f"Erro ao fazer a requisição: {e}")
-        return issues, pull_requests, comments
+        return issues, pull_requests
     except Exception as e:
         print(f"Um erro inesperado ocorreu: {e}")
-        return issues, pull_requests, comments
+        return issues, pull_requests
     
-    return issues, pull_requests, comments
+    return issues, pull_requests
 
 
 def coleta_issues(total_issues=0, issues_per_page=25):
@@ -86,6 +85,12 @@ def coleta_issues_coments(issue_number):
         return interpretar_comentarios(data_json_completa_da_issue)
     return {'issue_body': None, 'comments': []}
 
+def coleta_pull_requests():
+    url = "https://github.com/streamlit/streamlit/pulls"
+    response = requests.get(url)
+    response.raise_for_status()
+    data = html_to_json(response)
+    return interpretar_pull_requests(data)
 
 def html_to_json(response):
     if not response:
@@ -184,30 +189,40 @@ def interpretar_comentarios(data_completa_issue_page):
     
     return {'issue_body': issue_body_content, 'comments': all_comments}
 
+def interpretar_pull_requests(data):
+    pull_requests = []
+    try:
+        pull_requests_data = data.get('payload').get('preloadedQueries', [{}])[0].get('result', {}).get('data', {}).get('repository', {}).get('search', {})
+
+        pull_requests_count = pull_requests_data.get('pullRequestCount')
+        pull_requests_data_edges = pull_requests_data.get('edges', [])
+
+        for pull_request_edge in pull_requests_data_edges:
+            try:
+                pull_request_node = pull_request_edge.get('node', {})
+                if pull_request_node.get('__typename') == 'PullRequest':
+                    pull_request_info = {
+                        'id': pull_request_node.get('id'),
+                        'title': pull_request_node.get('title'),
+                        'number': pull_request_node.get('number'),
+                        'createdAt': pull_request_node.get('createdAt'),
+                        'author': (pull_request_node.get('author') or {}).get('login'),
+                        'state': pull_request_node.get('state'),
+                        'closed': pull_request_node.get('closed'),
+                    }
+                    pull_requests.append(pull_request_info)
+            except Exception as e:
+                print(f"Erro ao interpretar uma pull request individual da lista: {e}")
+                continue
+    except Exception as e:
+        print(f"Erro ao interpretar os dados gerais das pull requests: {e}")
+    return {'pull_requests': pull_requests, 'count': pull_requests_count}
 
 if __name__ == "__main__":
     print("Iniciando coleta de dados...")
-    issues_com_detalhes, _, _ = busca_dados_github()
+    issues_com_detalhes, _ = busca_dados_github()
 
     if issues_com_detalhes:
         print(f"\nColeta concluída. Total de issues detalhadas: {len(issues_com_detalhes)}")
-        if issues_com_detalhes:
-            primeira_issue = issues_com_detalhes[0]
-            print(f"\n--- Detalhes da Primeira Issue (Número: {primeira_issue.get('number')}) ---")
-            print(f"Título: {primeira_issue.get('title')}")
-            print(f"Corpo Principal da Issue:\n{primeira_issue.get('body', 'N/A')}")
-            
-            if primeira_issue.get('comments'):
-                print(f"\nNúmero de Comentários Adicionais: {len(primeira_issue['comments'])}")
-                print("Exemplo do primeiro comentário:")
-                primeiro_comentario = primeira_issue['comments'][0]
-                print(f"  Autor: {primeiro_comentario.get('author')}")
-                print(f"  Criado em: {primeiro_comentario.get('createdAt')}")
-                print(f"  ID: {primeiro_comentario.get('id')}")
-                print(f"  Corpo: {primeiro_comentario.get('body')}")
-            else:
-                print("\nNenhum comentário adicional encontrado para esta issue.")
-        else:
-            print("Nenhuma issue detalhada na lista.")
     else:
         print("Nenhuma issue foi coletada ou um erro ocorreu.")
