@@ -1,8 +1,5 @@
 import pytest
-from src.services.neo4j_service import Neo4jService # Importa apenas para type hinting e clareza
-
-# O fixture neo4j_service será automaticamente injetado pelo pytest
-# (definido em conftest.py)
+from src.services.neo4j_service import Neo4jService
 
 def test_neo4j_connection(neo4j_service: Neo4jService):
     """
@@ -23,7 +20,7 @@ def test_insert_issue_data(neo4j_service: Neo4jService):
     e garantir a idempotência do MERGE.
     """
     # Dados de teste
-    issue_number = 99999999 + hash("test_insert_issue_data") % 10000000 # Garante número único
+    issue_number = 99999999 + hash("test_insert_issue_data") % 10000000 
     test_issue = {
         'id': f'test-issue-id-{issue_number}',
         'number': issue_number,
@@ -70,9 +67,28 @@ def test_insert_issue_data(neo4j_service: Neo4jService):
         expected_comment_ids = sorted([c['id'] for c in test_issue['comments']])
         assert sorted(comments_result) == expected_comment_ids
 
-        # Limpeza (opcional, dependendo da estratégia de teste)
+        # --- LÓGICA DE LIMPEZA APRIMORADA ---
+        # 1. Deleta a issue e todas as suas relações diretas
         session.run("MATCH (i:Issue {number: $num}) DETACH DELETE i", num=issue_number)
-        print(f"Issue de teste #{issue_number} removida.")
+        
+        # 2. Deleta os comentários específicos criados por este teste (usando seus IDs únicos)
+        comment_ids_to_delete = [c['id'] for c in test_issue['comments']]
+        if comment_ids_to_delete:
+            session.run("MATCH (c:Comment) WHERE c.id IN $ids DETACH DELETE c", ids=comment_ids_to_delete)
+
+        # 3. Limpeza condicional de autores:
+        #    Coleta os logins dos autores que este teste pode ter criado/usado
+        test_author_logins = {test_issue['author']} # Autor da issue
+        for comment in test_issue['comments']:
+            test_author_logins.add(comment['author'])
+
+        for author_login in test_author_logins:
+            session.run("""
+                MATCH (a:Author {login: $login})
+                WHERE NOT (a)--() // Verifica se o autor não tem nenhuma relação
+                DETACH DELETE a
+            """, login=author_login)
+        print(f"\nIssue de teste #{issue_number}, comentários e autores isolados removidos.")
 
 def test_insert_issue_without_author(neo4j_service: Neo4jService):
     """
