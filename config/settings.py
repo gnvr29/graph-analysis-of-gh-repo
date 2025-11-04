@@ -11,6 +11,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 # Configurações do GitHub
 GITHUB_BASE_URL = "https://github.com/streamlit/streamlit/"
 GITHUB_ISSUES_PATH = "issues"
+GITHUB_CLOSED_ISSUES_PATH = "issues?q=is%3Aissue state%3Aclosed"
 GITHUB_PULLS_PATH = "pulls"
 
 # Outras configurações
