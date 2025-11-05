@@ -1,35 +1,92 @@
 import requests
 import time
-from src.utils.github_parser import html_to_json, interpretar_issues, interpretar_comentarios, interpretar_pull_requests
-# 1. Adicione a nova importação aqui
+from src.utils.github_parser import (
+    html_to_json, 
+    interpretar_issues, 
+    interpretar_comentarios
+)
 from config.settings import (
     GITHUB_BASE_URL, 
     GITHUB_ISSUES_PATH, 
-    GITHUB_CLOSED_ISSUES_PATH,  # <--- ADICIONADO
-    GITHUB_PULLS_PATH, 
-    REQUEST_DELAY_SECONDS
+    GITHUB_CLOSED_ISSUES_PATH,
+    REQUEST_DELAY_SECONDS,
+    REPO_OWNER,
+    REPO_NAME,
+    GITHUB_API_TOKEN
 )
 
 class GithubCollector:
     def __init__(self, base_url=GITHUB_BASE_URL, delay_seconds=REQUEST_DELAY_SECONDS):
-        self.base_url = base_url
+        
+        # --- Configuração de SCRAPING (para Issues) ---
+        self.base_url = base_url 
         self.delay_seconds = delay_seconds
-        self.session = requests.Session() 
+        self.session = requests.Session() # Sessão para scraping
 
-    def _fetch_page_data(self, url, description="página"):
-        """Método auxiliar para fazer requisições HTTP e parsear o JSON."""
+        # --- Configuração da API (para Pull Requests) ---
+        self.repo_owner = REPO_OWNER
+        self.repo_name = REPO_NAME
+        self.api_token = GITHUB_API_TOKEN
+        self.base_api_url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}"
+        
+        self.session_api = requests.Session()
+        self.session_api.headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+        }
+        if self.api_token:
+            print("Usando Token da API para autenticação de PRs.")
+            self.session_api.headers["Authorization"] = f"token {self.api_token}"
+        else:
+            print("Aviso: Coletando PRs sem Token. Sujeito a limites baixos (60/hora).")
+
+
+    def _fetch_page_data(self, url, description="página", json_expected=True):
+        """Método auxiliar para fazer requisições HTTP (SCRAPING) e parsear o JSON."""
         print(f"Coletando {description} da URL: {url}")
         try:
-            response = self.session.get(url)
+            response = self.session.get(url) 
             response.raise_for_status() 
-            time.sleep(self.delay_seconds) 
-            return html_to_json(response)
+            time.sleep(self.delay_seconds)
+            if json_expected:
+                return html_to_json(response)
+            return response.text
         except requests.exceptions.RequestException as e:
             print(f"Erro na requisição para {url}: {e}")
             return None
         except Exception as e:
             print(f"Erro inesperado ao buscar {description} de {url}: {e}")
             return None
+
+    
+    def _fetch_api_page(self, url):
+        """
+        Método auxiliar para fazer uma única requisição à API (PRs) e
+        retornar o JSON e os links de paginação.
+        """
+        print(f"Buscando dados da API: {url}")
+        try:
+            response = self.session_api.get(url) 
+            response.raise_for_status() 
+            
+            remaining = int(response.headers.get('X-RateLimit-Remaining', 5000))
+            if remaining < 50: 
+                print(f"Aviso: Limite de API baixo ({remaining}). Aguardando 1 minuto...")
+                time.sleep(60) 
+            
+            time.sleep(self.delay_seconds) 
+            
+            return response.json(), response.links
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Erro na requisição da API para {url}: {e}")
+            if '401' in str(e): print("ERRO: Token inválido ou expirado.")
+            if '403' in str(e): print("ERRO: Limite de requisições da API atingido.")
+            return None, None
+        except Exception as e:
+            print(f"Erro inesperado ao buscar dados da API: {e}")
+            return None, None
+
 
     def _collect_paginated_issues(self, issues_path, description="issues"):
         """
@@ -67,7 +124,7 @@ class GithubCollector:
                 if page_data:
                     parsed_page = interpretar_issues(page_data)
                     if not parsed_page.get('issues'):
-                         print(f"Página {page} não retornou issues. Interrompendo coleta.")
+                        print(f"Página {page} não retornou issues.")
                     all_issues.extend(parsed_page.get('issues', []))
                 else:
                     print(f"Atenção: Falha ao coletar {description} da página {page}.")
@@ -95,69 +152,107 @@ class GithubCollector:
         return issues_with_details
 
     def collect_issues(self):
-        """
-        Coleta todas as issues ABERTAS, incluindo seus detalhes e comentários.
-        Retorna uma lista de dicionários de issues.
-        """
+        """Coleta todas as issues ABERTAS."""
         print("--- Iniciando coleta de ISSUES ABERTAS ---")
-        return self._collect_paginated_issues(
-            GITHUB_ISSUES_PATH, 
-            description="issues abertas"
-        )
+        return self._collect_paginated_issues(GITHUB_ISSUES_PATH, description="issues abertas")
 
-    # 2. Método NOVO adicionado
     def collect_closed_issues(self):
-        """
-        Coleta todas as issues FECHADAS, incluindo seus detalhes e comentários.
-        Retorna uma lista de dicionários de issues.
-        """
+        """Coleta todas as issues FECHADAS."""
         print("--- Iniciando coleta de ISSUES FECHADAS ---")
-        return self._collect_paginated_issues(
-            GITHUB_CLOSED_ISSUES_PATH, 
-            description="issues fechadas"
-        )
+        return self._collect_paginated_issues(GITHUB_CLOSED_ISSUES_PATH, description="issues fechadas")
+    
 
-    def collect_pull_requests(self):
-        """
-        Coleta todas as pull requests abertas.
-        Retorna uma lista de dicionários de pull requests.
-        """
-        # (Este método não foi alterado, mas poderia ser refatorado de forma similar
-        # ao _collect_paginated_issues se você também quisesse PRs fechadas)
-        print("--- Iniciando coleta de PULL REQUESTS ---")
-        all_pull_requests = []
-        pull_requests_per_page = 25 
+    # --- MÉTODOS DE PULL REQUESTS (API) ---
 
-        initial_url = f"{self.base_url}{GITHUB_PULLS_PATH}?page=1"
-        data_initial = self._fetch_page_data(initial_url, description="pull requests da página 1")
+    def _collect_paginated_api_data(self, page_url):
+        """
+        Um helper genérico para buscar TODOS os itens de um endpoint paginado da API.
+        Usado para buscar comentários, revisões, etc.
+        """
+        all_items = []
+        page_count = 1
         
-        if data_initial:
-            result_initial = interpretar_pull_requests(data_initial)
-            all_pull_requests.extend(result_initial.get('pull_requests', []))
-            total_prs_count = result_initial.get('count', 0)
-            print(f"Número total estimado de pull requests abertas: {total_prs_count}")
-        else:
-            print("Não foi possível coletar pull requests da primeira página.")
-            return []
+        while page_url:
+            print(f"Buscando sub-dados (pág {page_count})... URL: {page_url.replace('https://api.github.com', '...')}")
+            json_data, pagination_links = self._fetch_api_page(page_url)
+            
+            if not json_data:
+                break
 
-        if total_prs_count > len(all_pull_requests):
-            pages_to_fetch = (total_prs_count // pull_requests_per_page) + (1 if total_prs_count % pull_requests_per_page > 0 else 0)
-            if pages_to_fetch > 400:
-                print(f"Atenção: Limite de paginação atingido. Coletando 400 páginas de {pages_to_fetch} estimadas.")
-                pages_to_fetch = 400
+            all_items.extend(json_data)
+            
+            if pagination_links and 'next' in pagination_links:
+                page_url = pagination_links['next']['url']
+                page_count += 1
+            else:
+                page_url = None 
+                
+        return all_items
 
-            print(f"Coletando pull requests restantes das páginas 2 até {pages_to_fetch}...")
-            for page in range(2, pages_to_fetch + 1):
-                page_url = f"{self.base_url}{GITHUB_PULLS_PATH}?page={page}"
-                page_data = self._fetch_page_data(page_url, description=f"pull requests da página {page}")
-                if page_data:
-                    parsed_page = interpretar_pull_requests(page_data)
-                    if not parsed_page.get('pull_requests'):
-                        print(f"Página {page} não retornou PRs. Interrompendo coleta.")
-                        break
-                    all_pull_requests.extend(parsed_page.get('pull_requests', []))
-                else:
-                    print(f"Atenção: Falha ao coletar pull requests da página {page}.")
 
-        print(f"Número total de pull requests coletadas: {len(all_pull_requests)}")
-        return all_pull_requests
+    def collect_all_pull_requests_api(self):
+        """
+        Coleta TODOS os pull requests (abertos e fechados) do repositório
+        usando a API oficial, incluindo seus comentários e revisões.
+        """
+        all_prs_data = []
+        
+        page_url = f"{self.base_api_url}/pulls?state=all&per_page=100&sort=created&direction=desc"
+        page_count = 1
+
+        print("--- Iniciando coleta de TODOS os Pull Requests via API ---")
+
+        while page_url:
+            print(f"\n--- Coletando página PRINCIPAL {page_count} de PRs ---")
+            
+            json_data, pagination_links = self._fetch_api_page(page_url)
+            
+            if not json_data:
+                print("Falha ao buscar dados ou não há mais dados. Encerrando coleta de PRs.")
+                break
+
+            print(f"Recebidos {len(json_data)} PRs nesta página.")
+
+            for pr in json_data:
+                pr_number = pr['number']
+                print(f"Processando PR #{pr_number}: {pr['title'][:50]}...")
+                
+                status = pr.get('state', 'UNKNOWN').upper()
+                if pr.get('merged_at'):
+                    status = 'MERGED'
+                
+                comments_url = f"{self.base_api_url}/issues/{pr_number}/comments?per_page=100"
+                pr_issue_comments = self._collect_paginated_api_data(comments_url)
+                
+                review_comments_url = f"{self.base_api_url}/pulls/{pr_number}/comments?per_page=100"
+                pr_review_comments = self._collect_paginated_api_data(review_comments_url)
+                
+                reviews_url = f"{self.base_api_url}/pulls/{pr_number}/reviews?per_page=100"
+                pr_reviews = self._collect_paginated_api_data(reviews_url)
+                
+                pr_dict = {
+                    'id': pr.get('id'),
+                    'number': pr_number,
+                    'title': pr.get('title'),
+                    'author': pr.get('user', {}).get('login'),
+                    'createdAt': pr.get('created_at'),
+                    'closedAt': pr.get('closed_at'),
+                    'mergedAt': pr.get('merged_at'),
+                    'mergedBy': pr.get('merged_by', {}).get('login') if pr.get('merged_by') else None, 
+                    'status': status,
+                    'body': pr.get('body'),
+                    'comments': pr_issue_comments,     
+                    'review_comments': pr_review_comments,
+                    'reviews': pr_reviews
+                }
+                all_prs_data.append(pr_dict)
+            
+            if pagination_links and 'next' in pagination_links:
+                page_url = pagination_links['next']['url']
+                page_count += 1
+            else:
+                page_url = None
+
+        print(f"\n--- Coleta de PRs pela API finalizada ---")
+        print(f"Total de Pull Requests (abertos e fechados) processados: {len(all_prs_data)}")
+        return all_prs_data
