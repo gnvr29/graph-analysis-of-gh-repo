@@ -109,34 +109,14 @@ def interpretar_pull_requests(data):
     e retorna uma lista de pull requests e a contagem total.
     """
     pull_requests = []
-    pull_requests_count = 0
+    open_pull_requests_count = 0
+    closed_pull_requests_count = 0
     try:
-        preloaded_queries = data.get('payload', {}).get('preloadedQueries', [])
-        if preloaded_queries:
-            result = preloaded_queries[0].get('result', {})
-            repository_data = result.get('data', {}).get('repository', {})
-            search_data = repository_data.get('search', {})
+        soup = BeautifulSoup(data, 'html.parser')
+        pr_count = soup.select_one('div.table-list-header-toggle').text.strip().split()
+        open_pull_requests_count = int(pr_count[0].replace(',', ''))
+        closed_pull_requests_count = int(pr_count[2].replace(',', ''))
 
-            pull_requests_count = search_data.get('pullRequestCount', 0) 
-            pr_data_edges = search_data.get('edges', [])
-
-            for pr_edge in pr_data_edges:
-                try:
-                    pr_node = pr_edge.get('node', {})
-                    if pr_node.get('__typename') == 'PullRequest':
-                        pr_info = {
-                            'id': pr_node.get('id'),
-                            'title': pr_node.get('title'),
-                            'number': pr_node.get('number'),
-                            'createdAt': pr_node.get('createdAt'),
-                            'author': (pr_node.get('author') or {}).get('login'),
-                            'state': pr_node.get('state'),
-                            'closed': pr_node.get('closed'),
-                        }
-                        pull_requests.append(pr_info)
-                except Exception as e:
-                    print(f"Erro ao interpretar uma pull request individual da lista: {e}")
-                    continue
     except Exception as e:
         print(f"Erro ao interpretar os dados gerais das pull requests: {e}")
-    return {'pull_requests': pull_requests, 'count': pull_requests_count}
+    return {'pull_requests': pull_requests, 'count': open_pull_requests_count + closed_pull_requests_count}
