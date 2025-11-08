@@ -1,8 +1,6 @@
-# main.py
 from src.collectors.github_collector import GithubCollector
 from src.services.neo4j_service import Neo4jService
 from config.settings import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
-import time
 
 def run_github_data_pipeline():
     """
