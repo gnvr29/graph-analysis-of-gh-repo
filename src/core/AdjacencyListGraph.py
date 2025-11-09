@@ -8,7 +8,7 @@ class AdjacencyListGraph(Graph):
 
     def __init__(self, num_vertices: int):
         """Construtor da Lista de Adjacência."""
-        super()._init_(num_vertices)
+        super().__init__(num_vertices)
         self.adj_out = [{} for _ in range(num_vertices)]
         self.adj_in = [{} for _ in range(num_vertices)]
 
