@@ -273,3 +273,7 @@ class Neo4jService:
         with self.driver.session() as session:
             session.execute_write(self._create_pull_request_transaction, pr_data)
     
+    def query(self, cypher: str, parameters: dict | None = None):
+        with self.driver.session() as session:
+            result = session.run(cypher, parameters or {})
+            return [rec.data() for rec in result]
