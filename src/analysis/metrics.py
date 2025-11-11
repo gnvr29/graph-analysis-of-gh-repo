@@ -17,6 +17,8 @@ necessário.
 """
 from collections import deque, defaultdict
 from typing import List, Tuple, Dict
+import heapq
+import math
 
 
 def build_adjlists(n: int, edges: List[Tuple[int, int, float]]):
@@ -62,11 +64,9 @@ def betweenness_centrality(out_adj: List[List[Tuple[int, float]]], directed: boo
     n = len(out_adj)
     CB = [0.0] * n
 
-    # Converter para listas simples de vizinhos (não-ponderado) para BFS
     neighbors = [ [v for v,_ in out_adj[u]] for u in range(n) ]
 
     for s in range(n):
-        # caminhos mais curtos a partir da fonte s
         S = []
         P = [[] for _ in range(n)]
         sigma = [0.0] * n
@@ -85,7 +85,59 @@ def betweenness_centrality(out_adj: List[List[Tuple[int, float]]], directed: boo
                     sigma[w] += sigma[v]
                     P[w].append(v)
 
-        # acumulação de dependências
+        delta = [0.0] * n
+        while S:
+            w = S.pop()
+            for v in P[w]:
+                if sigma[w] != 0:
+                    delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w])
+            if w != s:
+                CB[w] += delta[w]
+
+    return {i: CB[i] for i in range(n)}
+
+
+def betweenness_centrality_weighted(out_adj: List[List[Tuple[int, float]]]) -> Dict[int, float]:
+    """Brandes algorithm adaptado para grafos ponderados (arestas com peso > 0).
+
+    Implementação utiliza Dijkstra para caminhos mínimos ponderados (custo = 1/weight).
+    Retorna dicionário nó -> betweenness (não normalizado).
+
+    Observação sobre custo: como aqui os pesos representam força/importância
+    (maior = mais forte), usamos custo = 1.0 / weight para que arestas mais
+    pesadas correspondam a caminhos "mais curtos".
+    """
+    n = len(out_adj)
+    CB = [0.0] * n
+
+    for s in range(n):
+        S = []
+        P = [[] for _ in range(n)]
+        sigma = [0.0] * n
+        dist = [math.inf] * n
+        sigma[s] = 1.0
+        dist[s] = 0.0
+
+        heap = [(0.0, s)]
+        while heap:
+            d_v, v = heapq.heappop(heap)
+            if d_v > dist[v] + 1e-15:
+                continue
+            S.append(v)
+            for w, weight in out_adj[v]:
+                if weight <= 0:
+                    continue
+                cost = 1.0 / float(weight)
+                alt = dist[v] + cost
+                if alt + 1e-15 < dist[w]:
+                    dist[w] = alt
+                    heapq.heappush(heap, (alt, w))
+                    sigma[w] = sigma[v]
+                    P[w] = [v]
+                elif abs(alt - dist[w]) <= 1e-15:
+                    sigma[w] += sigma[v]
+                    P[w].append(v)
+
         delta = [0.0] * n
         while S:
             w = S.pop()
@@ -124,7 +176,6 @@ def closeness_centrality(out_adj: List[List[Tuple[int, float]]], directed: bool 
                 total += d
                 reachable += 1
         if total > 0:
-            # normaliza por reachable para ser comparável entre nós
             C[s] = reachable / total
         else:
             C[s] = 0.0
@@ -146,7 +197,6 @@ def pagerank(out_adj: List[List[Tuple[int, float]]], damping: float = 0.85, max_
         new_pr = [ (1.0 - damping) / n ] * n
         for i in range(n):
             if out_strength[i] == 0:
-                # nó sem saída: distribui uniformemente (dangling)
                 add = damping * pr[i] / n
                 for j in range(n):
                     new_pr[j] += add
@@ -177,7 +227,6 @@ def eigenvector_centrality(out_adj: List[List[Tuple[int, float]]], in_adj: List[
             for j, w in in_adj[i]:
                 s += w * v[j]
             new_v[i] = s
-        # normalizar
         norm = sum(abs(x) for x in new_v)
         if norm == 0:
             break
@@ -193,6 +242,7 @@ __all__ = [
     "build_adjlists",
     "degree_centrality",
     "betweenness_centrality",
+    "betweenness_centrality_weighted",
     "closeness_centrality",
     "pagerank",
     "eigenvector_centrality",
