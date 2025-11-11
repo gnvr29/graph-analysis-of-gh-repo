@@ -185,13 +185,16 @@ def display_graph_svg_streamlit(
         if u < len(getattr(graph, "adj_out", [])):
             max_adj_list_len = max(max_adj_list_len, len(graph.adj_out[u]))
 
-    total_width = (
-        MARGIN_LEFT
-        + NODE_BOX_WIDTH
-        + (ARROW_LENGTH if max_adj_list_len > 0 else 0)
-        + (max_adj_list_len * (NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING)) 
-        + MARGIN_LEFT
-    )
+    total_width = MARGIN_LEFT + NODE_BOX_WIDTH # Largura para a margem esquerda e o nó fonte
+
+    if max_adj_list_len > 0:
+        # Cada nó adjacente requer o comprimento da seta, a largura da sua própria caixa
+        total_width += max_adj_list_len * (ARROW_LENGTH + NODE_BOX_WIDTH) 
+        # Adiciona o espaçamento horizontal *entre* os nós adjacentes (se houver mais de um)
+        total_width += (max_adj_list_len - 1) * HORIZONTAL_ADJ_NODE_SPACING
+    
+    total_width += MARGIN_LEFT # Largura para a margem direita
+
     total_height = (
         MARGIN_TOP
         + (n * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING)) 
@@ -260,24 +263,30 @@ def display_graph_svg_streamlit(
         neighbors = sorted(neighbors, key=lambda it: it[1], reverse=True)
 
         if neighbors:
-            current_adj_x = u_box_x + NODE_BOX_WIDTH + ARROW_LENGTH
-            current_adj_y = u_box_y 
+            current_element_end_x = u_box_x + NODE_BOX_WIDTH 
 
             # Desenha conexão para cada vizinho
-            for v, w in neighbors:
+            for i, (v, w) in enumerate(neighbors):
                 adj_name = idx_to_name.get(v, f"Nó {v}")
                 adj_display = truncate_name(adj_name)
 
-                # Posição Y da linha é baseada na 'linha' (row_index)
                 line_y = u_box_y + NODE_BOX_HEIGHT / 2
-                arrow_tip_x = current_adj_x
-                line_start_x = u_box_x + NODE_BOX_WIDTH
-                line_end_x = current_adj_x  
+
+                line_start_x = current_element_end_x
+                if i > 0: # Se não for o primeiro vizinho, retire o espaçamento entre eles
+                    line_start_x -= HORIZONTAL_ADJ_NODE_SPACING
+                
+                # A ponta da seta está a ARROW_LENGTH de onde a linha começou
+                arrow_tip_x = line_start_x + ARROW_LENGTH
+                
+                # A caixa do vizinho começa exatamente onde a seta termina
+                v_box_x = arrow_tip_x 
+                v_box_y = u_box_y # Vizinhos na mesma linha Y que o nó fonte
 
                 # Linha
                 dwg.add(dwg.line(
                     start=(line_start_x, line_y),
-                    end=(line_end_x, line_y),
+                    end=(arrow_tip_x, line_y),
                     stroke=STROKE_COLOR,
                     stroke_width=2
                 ))
@@ -301,7 +310,7 @@ def display_graph_svg_streamlit(
                 # Caixa do vizinho
                 g_adj = dwg.g(id=f"node-{u}-to-{v}")
                 g_adj.add(dwg.rect(
-                    insert=(current_adj_x, current_adj_y),
+                    insert=(v_box_x, v_box_y),
                     size=(NODE_BOX_WIDTH, NODE_BOX_HEIGHT),
                     fill=NODE_FILL,
                     stroke=STROKE_COLOR,
@@ -310,7 +319,7 @@ def display_graph_svg_streamlit(
                 # Texto do vizinho
                 t_adj = dwg.text(
                     adj_display,
-                    insert=(current_adj_x + PADDING_TEXT_X, current_adj_y + PADDING_TEXT_Y),
+                    insert=(v_box_x + PADDING_TEXT_X, v_box_y + PADDING_TEXT_Y),
                     text_anchor="middle",
                     font_size=TEXT_SIZE,
                     fill="#111"
@@ -319,7 +328,7 @@ def display_graph_svg_streamlit(
                 # Tooltip do vizinho
                 t_full_adj = dwg.text(
                     f"{adj_name} (peso: {w})",
-                    insert=(current_adj_x + PADDING_TEXT_X, current_adj_y + NODE_BOX_HEIGHT + 12),
+                    insert=(v_box_x + PADDING_TEXT_X, v_box_y + NODE_BOX_HEIGHT + 12),
                     text_anchor="middle",
                     font_size=TEXT_SIZE - 2
                 )
@@ -328,7 +337,7 @@ def display_graph_svg_streamlit(
                 dwg.add(g_adj)  
 
                 # Atualiza o X para o próximo vizinho
-                current_adj_x += NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING # Correção aqui
+                current_element_end_x = v_box_x + NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING
 
     # --- Fim do Loop Principal ---
 
