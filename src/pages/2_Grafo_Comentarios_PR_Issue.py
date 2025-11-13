@@ -4,14 +4,13 @@ import streamlit.components.v1 as components
 from typing import List, Tuple, Optional 
 import math
 import pandas as pd
-import matplotlib.pyplot as plt # <--- NOVO
-import random                   # <--- NOVO
+import matplotlib.pyplot as plt 
+import random                   
 
-# Importa AMBAS as implementações
 try:
     from src.core.AdjacencyListGraph import AdjacencyListGraph
-    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph # <--- RE-ATIVADO
-    from src.core.AbstractGraph import AbstractGraph # Importa o "Pai"
+    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
+    from src.core.AbstractGraph import AbstractGraph 
 except ImportError as e:
     st.error(f"Erro crítico ao importar classes de Grafo: {e}")
     st.stop()
@@ -31,7 +30,7 @@ except ImportError:
 import src.services.graph_service as graph_service
 
 
-# ============== CONFIGURAÇÕES E QUERIES (Sem alterações) ==============
+# ============== CONFIGURAÇÕES E QUERIES  ==============
 LABEL_AUTHOR = "Author"
 LABEL_ISSUE = "Issue"
 LABEL_PR = "PullRequest"
@@ -58,10 +57,9 @@ WHERE src <> dst AND (target:{LABEL_ISSUE} OR target:{LABEL_PR})
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
-# ============== FUNÇÕES DE DADOS E GRAFO (Sem alterações) ==============
+# ============== FUNÇÕES DE DADOS E GRAFO ==============
 
 def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
-    # ... (código idêntico)
     print("Buscando todos os autores...")
     authors_rows = neo4j_service.query(AUTHORS_QUERY)
     if not authors_rows:
@@ -99,14 +97,14 @@ def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[
         graph.addEdge(u_idx, v_idx, weight)
     return graph
 
-# ============== NOVA FUNÇÃO DE VISUALIZAÇÃO (MATPLOTLIB) ==============
+# ============== NOVA FUNÇÃO DE VISUALIZAÇÃO ==============
 
 def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list):
     """
-    Desenha o grafo (layout de força) usando a API Abstrata,
+    Desenha o grafo usando a API Abstrata,
     independente da implementação.
     """
-    st.subheader("Visualização Gráfica (Layout de Força)")
+    st.subheader("Visualização Gráfica")
 
     if not indices_to_render:
         st.warning("Nenhum autor corresponde aos filtros selecionados.")
@@ -127,7 +125,7 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
     positions = {i: [random.uniform(-k, k), random.uniform(-k, k)] for i in indices_to_render}
 
     # ================= SIMULAÇÃO =================
-    progress_bar = st.progress(0, text="Calculando layout de força...")
+    progress_bar = st.progress(0, text="Calculando...")
     for iter_num in range(iterations):
         disp = {i: [0.0, 0.0] for i in indices_to_render}
 
@@ -190,7 +188,7 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
     # Arestas
     for u in indices_to_render:
         for v in indices_to_render:
-            if graph.hasEdge(u, v): # USA A API ABSTRATA
+            if graph.hasEdge(u, v): 
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
                 plt.arrow(
@@ -209,33 +207,37 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
     plt.clf()
 
 
-# ============== FUNÇÃO APP (MODIFICADA) ==============
+# ============== FUNÇÃO APP ==============
 
 def app():
     st.title("Grafo de Interações entre Autores (Comentários)")
     st.markdown("Use esta página para carregar dados e analisar as interações.")
 
-    # --- INICIALIZAÇÃO DO STATE ---
-    if 'graph_obj' not in st.session_state:
+    PAGE_ID = "comentarios" 
+    
+    if 'current_graph_id' not in st.session_state:
+        st.session_state.current_graph_id = PAGE_ID
+
+    if st.session_state.current_graph_id != PAGE_ID:
+        print(f"Mudando de página, limpando grafo antigo ({st.session_state.current_graph_id})...")
         st.session_state.graph_obj = None
-    if 'vertex_names_list' not in st.session_state:
         st.session_state.vertex_names_list = []
-    if 'name_to_idx_map' not in st.session_state:
         st.session_state.name_to_idx_map = {}
-    if 'idx_to_name_map' not in st.session_state:
         st.session_state.idx_to_name_map = {}
+        st.session_state.current_graph_id = PAGE_ID
 
     # --- ESCOLHA DA IMPLEMENTAÇÃO ---
     st.sidebar.header("Configuração da Geração")
     impl_choice = st.sidebar.selectbox(
         "Escolha a implementação do Grafo:",
-        ("Lista de Adjacência", "Matriz de Adjacência")
+        ("Lista de Adjacência", "Matriz de Adjacência"),
+        key=f"{PAGE_ID}_impl_choice" 
     )
     
     # --- FILTROS DE VISUALIZAÇÃO ---
     st.sidebar.header("Opções de Filtro (Visualização)")
-    filter_with_edges = st.sidebar.checkbox("Mostrar apenas autores com interações", value=True)
-    limit = st.sidebar.number_input("Limitar autores (0 = sem limite)", min_value=0, value=0, step=10)
+    filter_with_edges = st.sidebar.checkbox("Mostrar apenas autores com interações", value=True, key=f"{PAGE_ID}_filter_edges")
+    limit = st.sidebar.number_input("Limitar autores (0 = sem limite)", min_value=0, value=0, step=10, key=f"{PAGE_ID}_limit")
 
     # --- LÓGICA DE CONEXÃO ---
     try:
@@ -244,7 +246,6 @@ def app():
         st.error(f"Erro ao obter conexão com Neo4j: {e}")
         st.stop()
 
-    # --- BOTÃO DE GERAR ---
     if st.button("Gerar e Analisar Grafo"):
         with st.spinner("Buscando dados e construindo grafo..."):
             try:
@@ -252,7 +253,6 @@ def app():
                 if not idx_to_name:
                     st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
                     st.session_state.graph_obj = None
-                    # Limpa o resto do state
                     st.session_state.vertex_names_list = []
                     st.session_state.name_to_idx_map = {}
                     st.session_state.idx_to_name_map = {}
@@ -260,11 +260,10 @@ def app():
 
                 vertex_count = len(idx_to_name)
                 
-                # Escolhe a classe concreta baseada na seleção
                 if impl_choice == "Lista de Adjacência":
                     impl_class = AdjacencyListGraph
                 # else:
-                    # impl_class = AdjacencyMatrixGraph # <--- RE-ATIVADO
+                    # impl_class = AdjacencyMatrixGraph
                 
                 graph = build_graph(impl_class, vertex_count, edges)
 
@@ -272,15 +271,16 @@ def app():
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
                 st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
-                st.session_state.idx_to_name_map = idx_to_name # Salva o mapa original
+                st.session_state.idx_to_name_map = idx_to_name 
+                st.session_state.current_graph_id = PAGE_ID 
 
             except Exception as e:
                 st.error(f"Ocorreu um erro ao gerar o grafo: {e}")
                 st.exception(e)
-                st.session_state.graph_obj = None # Limpa em caso de erro
+                st.session_state.graph_obj = None 
 
     
-    # --- RENDERIZAÇÃO (SEMPRE RODA SE O GRAFO EXISTIR) ---
+    # --- RENDERIZAÇÃO ---
     
     if st.session_state.get("graph_obj") is not None:
         graph = st.session_state.graph_obj
@@ -288,10 +288,9 @@ def app():
         
         st.success(f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
-        # --- LÓGICA DE FILTRO (Usa a API do grafo) ---
+        # --- LÓGICA DE FILTRO ---
         author_activity = []
         for i in range(graph.getVertexCount()):
-            # Usamos a API abstrata, não importa a implementação
             out_degree = graph.getVertexOutDegree(i)
             author_activity.append((i, out_degree))
 
@@ -302,17 +301,14 @@ def app():
             author_activity = author_activity[:limit]
         indices_to_render_internal = [i for i, degree in author_activity]
         
-        # (NÃO PRECISAMOS MAIS PREPARAR DADOS PARA O SVG)
-        
-        # --- RENDERIZAÇÃO EM ABAS (MOSTRAR AS 3 COISAS) ---
+        # --- RENDERIZAÇÃO EM ABAS ---
         st.divider()
         st.header("Representações do Grafo")
         
-        tab1, tab2, tab3 = st.tabs(["Visualização (Força)", "Lista de Adjacência", "Matriz de Adjacência"]) # <--- TÍTULO MUDADO
+        tab1, tab2, tab3 = st.tabs(["Visualização (Força)", "Lista de Adjacência", "Matriz de Adjacência"])
 
         with tab1:
-            st.info("Visualização do grafo filtrado (layout de força):")
-            # --- CHAMADA DA FUNÇÃO DE DESENHO MODIFICADA ---
+            st.info("Visualização do grafo filtrado:")
             if not indices_to_render_internal:
                 st.warning("Nenhum autor corresponde aos filtros selecionados.")
             else:
@@ -320,7 +316,6 @@ def app():
 
         with tab2:
             st.info("Representação do grafo completo como Lista de Adjacência.")
-            # Chama o service, que chama graph.getAsAdjacencyList()
             adj_list_data = graph_service.get_adjacency_list()
             readable_list = {idx_to_name.get(i, str(i)): {idx_to_name.get(v, str(v)): w for v, w in neighbors.items()} 
                              for i, neighbors in enumerate(adj_list_data) if neighbors}
@@ -328,7 +323,6 @@ def app():
 
         with tab3:
             st.info("Representação do grafo completo como Matriz de Adjacência.")
-            # Chama o service, que chama graph.getAsAdjacencyMatrix()
             matrix_data = graph_service.get_adjacency_matrix()
             matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
             df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
@@ -338,7 +332,7 @@ def app():
         st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
     
-    # --- CHAMA O HELPER DA SIDEBAR (SEMPRE) ---
+    # --- CHAMA O HELPER DA SIDEBAR ---
     draw_graph_api_sidebar()
 
 
