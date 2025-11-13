@@ -17,7 +17,7 @@ if project_root not in sys.path:
 try:
     # Importa AMBAS as implementações
     from src.core.AdjacencyListGraph import AdjacencyListGraph
-    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph # <-- Reativado
+    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph 
     from src.core.AbstractGraph import AbstractGraph # Importa o "Pai"
 except ImportError as e:
     st.error(f"Erro crítico ao importar classes de Grafo: {e}")
@@ -147,7 +147,6 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
     # ================= SIMULAÇÃO =================
     
     # --- CORREÇÃO DA BARRA DE PROGRESSO ---
-    # 1. Crie a barra UMA VEZ e salve na variável 'progress_bar'
     progress_bar = st.progress(0, text="Calculando layout de força...")
     
     for iter_num in range(iterations):
@@ -189,10 +188,8 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
 
         max_step *= cooling
         if (iter_num + 1) % (iterations // 20) == 0:
-             # 2. ATUALIZE a barra de progresso existente
              progress_bar.progress((iter_num + 1) / iterations, text=f"Calculando layout: {iter_num+1}/{iterations} iterações")
 
-    # 3. Limpe a barra de progresso após a conclusão
     progress_bar.empty()
     # --- FIM DA CORREÇÃO ---
 
@@ -235,34 +232,39 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
 
 # ============== STREAMLIT APP (Modificado) ==============
 def app():
-    # st.set_page_config(layout="wide") # Removido
     st.title("🔎 Grafo de Interações de Review entre Autores")
 
-    # --- INICIALIZAÇÃO DO STATE ---
-    if 'graph_obj' not in st.session_state:
+    # --- NOVO: GERENCIAMENTO DE ESTADO POR PÁGINA ---
+    PAGE_ID = "reviews" # ID Único para esta página
+    
+    if 'current_graph_id' not in st.session_state:
+        st.session_state.current_graph_id = PAGE_ID
+
+    # Se o ID na sessão não for o ID desta página, limpe o grafo antigo
+    if st.session_state.current_graph_id != PAGE_ID:
+        print(f"Mudando de página, limpando grafo antigo ({st.session_state.current_graph_id})...")
         st.session_state.graph_obj = None
-    if 'vertex_names_list' not in st.session_state:
         st.session_state.vertex_names_list = []
-    if 'name_to_idx_map' not in st.session_state:
         st.session_state.name_to_idx_map = {}
-    if 'idx_to_name_map' not in st.session_state:
         st.session_state.idx_to_name_map = {}
+        st.session_state.current_graph_id = PAGE_ID
+    # --- FIM DO GERENCIAMENTO DE ESTADO ---
 
     # --- ESCOLHA DA IMPLEMENTAÇÃO ---
     st.sidebar.header("Configuração da Geração")
     impl_choice = st.sidebar.selectbox(
         "Escolha a implementação do Grafo:",
         ("Lista de Adjacência", "Matriz de Adjacência"),
-        key="review_impl_choice"
+        key=f"{PAGE_ID}_impl_choice" # Chave única
     )
 
     # --- FILTROS (Sem alterações) ---
     st.sidebar.header("Filtros")
     filter_with_edges = st.sidebar.checkbox(
-        "Mostrar apenas autores com interações de saída", value=True
+        "Mostrar apenas autores com interações de saída", value=True, key=f"{PAGE_ID}_filter_edges"
     )
     limit = st.sidebar.number_input(
-        "Limitar autores (0 = sem limite, Top N por atividade)", min_value=0, value=0, step=10
+        "Limitar autores (0 = sem limite, Top N por atividade)", min_value=0, value=0, step=10, key=f"{PAGE_ID}_limit"
     )
 
     st.markdown(
@@ -285,7 +287,7 @@ def app():
             idx_to_name, edges = fetch_review_edges(neo4j_service)
             if not idx_to_name:
                 st.warning("Nenhum dado para exibir.")
-                st.session_state.graph_obj = None # Limpa state
+                st.session_state.graph_obj = None 
                 st.session_state.vertex_names_list = []
                 st.session_state.name_to_idx_map = {}
                 st.session_state.idx_to_name_map = {}
@@ -296,7 +298,7 @@ def app():
             if impl_choice == "Lista de Adjacência":
                 impl_class = AdjacencyListGraph
             # else:
-                # impl_class = AdjacencyMatrixGraph # <-- Reativado
+                # impl_class = AdjacencyMatrixGraph
 
             graph = build_graph(impl_class, vertex_count, edges)
             
@@ -304,21 +306,21 @@ def app():
             st.session_state.graph_obj = graph
             st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
             st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
-            st.session_state.idx_to_name_map = idx_to_name # Salva o mapa original
+            st.session_state.idx_to_name_map = idx_to_name 
+            st.session_state.current_graph_id = PAGE_ID 
             
 
-    # --- RENDERIZAÇÃO (SEMPRE RODA SE O GRAFO EXISTIR) ---
+    # --- RENDERIZAÇÃO ---
     if st.session_state.get("graph_obj") is not None:
         graph = st.session_state.graph_obj
         idx_to_name = st.session_state.idx_to_name_map
         
         st.success(f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
-        # --- FILTRO (Modificado para usar API) ---
+        # --- FILTRO ---
         author_activity = []
         for u in range(graph.getVertexCount()):
             total_weight = 0
-            # Calcula o peso total de saída (mais complexo com API)
             for v in range(graph.getVertexCount()):
                 if graph.hasEdge(u, v):
                     total_weight += graph.getEdgeWeight(u, v)
@@ -331,7 +333,7 @@ def app():
             author_activity = author_activity[:limit]
         indices_to_render = [u for u, _ in author_activity]
         
-        # --- RENDERIZAÇÃO EM ABAS (MOSTRAR AS 3 COISAS) ---
+        # --- RENDERIZAÇÃO EM ABAS ---
         st.divider()
         st.header("Representações do Grafo")
         
@@ -361,7 +363,7 @@ def app():
         st.info("Escolha uma implementação e clique em 'Gerar Grafo de Reviews' para carregar os dados.")
 
 
-    # --- CHAMA O HELPER DA SIDEBAR (SEMPRE) ---
+    # --- CHAMA O HELPER DA SIDEBAR ---
     draw_graph_api_sidebar()
 
 
