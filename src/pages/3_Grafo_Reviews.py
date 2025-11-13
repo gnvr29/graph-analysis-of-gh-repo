@@ -4,6 +4,8 @@ import math
 import random
 import matplotlib.pyplot as plt
 import streamlit as st
+import pandas as pd
+from collections import defaultdict
 
 # ============== AJUSTE DE PATH ==============
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,38 +15,42 @@ if project_root not in sys.path:
 
 # ============== IMPORTS DO PROJETO ==============
 try:
+    # Importa AMBAS as implementações
     from src.core.AdjacencyListGraph import AdjacencyListGraph
+    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph # <-- Reativado
+    from src.core.AbstractGraph import AbstractGraph # Importa o "Pai"
 except ImportError as e:
-    raise ImportError("Não foi possível importar AdjacencyListGraph.") from e
-
-from config.settings import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+    st.error(f"Erro crítico ao importar classes de Grafo: {e}")
+    st.stop()
 
 try:
-    from src.services.neo4j_service import Neo4jService
+    # Usa o conector padrão
+    from src.utils.neo4j_connector import get_neo4j_service
 except ImportError:
-    from neo4j import GraphDatabase
+    st.error("Não foi possível encontrar 'src.utils.neo4j_connector'. Verifique o arquivo.")
+    st.stop()
+    
+try:
+    # Importa o helper da sidebar
+    from src.utils.streamlit_helpers import draw_graph_api_sidebar
+except ImportError:
+    st.error("Não foi possível encontrar 'src.utils.streamlit_helpers'. Crie o arquivo.")
+    st.stop()
 
-    class Neo4jService:
-        def __init__(self, uri, user, password):
-            self.driver = GraphDatabase.driver(uri, auth=(user, password))
-        def query(self, cypher):
-            with self.driver.session() as s:
-                return [dict(r) for r in s.run(cypher)]
-        def close(self):
-            self.driver.close()
+# Importa o service para as abas
+import src.services.graph_service as graph_service
 
-# ============== CONSTANTES ==============
+
+# ============== CONSTANTES (Sem alterações) ==============
 LABEL_AUTHOR = "Author"
 LABEL_PR = "PullRequest"
 LABEL_REVIEW = "Review"
-
 REL_PERFORMED_REVIEW = "PERFORMED_REVIEW"
 REL_HAS_REVIEW = "HAS_REVIEW"
 REL_CREATED = "CREATED"
-
 WEIGHT_REVIEW = 4
 
-# ============== QUERY ==============
+# ============== QUERY (Sem alterações) ==============
 PR_REVIEW_APPROVAL_QUERY = f"""
 MATCH (src:{LABEL_AUTHOR})-[:{REL_PERFORMED_REVIEW}|REVIEWED|APPROVED]->(r:{LABEL_REVIEW})
 MATCH (pr:{LABEL_PR})-[:{REL_HAS_REVIEW}|REVIEWS|FOR]->(r)
@@ -55,15 +61,25 @@ RETURN id(src) AS srcId, id(dst) AS dstId,
        coalesce(dst.login, toString(id(dst))) AS dstName
 """
 
-# ============== FUNÇÕES ==============
+# ============== FUNÇÕES (Modificadas) ==============
 def fetch_review_edges(neo4j_service):
+    # ... (Sua função está correta, sem alterações) ...
     st.info("Buscando interações de review/aprovação no Neo4j...")
     rows = neo4j_service.query(PR_REVIEW_APPROVAL_QUERY)
     if not rows:
         st.warning("Nenhuma interação de review encontrada.")
-        return {}, []
+        return {}, [], {}
 
-    authors = {}
+    authors_id_to_name = {}
+    name_to_id = {}
+    edges_data = []
+    
+    id_map = {}
+    current_idx = 0
+    
+    authors_neo4j_id_to_idx = {}
+    idx_to_name_map = {}
+    
     edges = []
 
     for row in rows:
@@ -72,29 +88,43 @@ def fetch_review_edges(neo4j_service):
         src_name = row["srcName"]
         dst_name = row["dstName"]
 
-        if src_id not in authors:
-            authors[src_id] = src_name
-        if dst_id not in authors:
-            authors[dst_id] = dst_name
+        if src_id not in authors_neo4j_id_to_idx:
+            authors_neo4j_id_to_idx[src_id] = current_idx
+            idx_to_name_map[current_idx] = src_name
+            current_idx += 1
+            
+        if dst_id not in authors_neo4j_id_to_idx:
+            authors_neo4j_id_to_idx[dst_id] = current_idx
+            idx_to_name_map[current_idx] = dst_name
+            current_idx += 1
 
-        edges.append((src_id, dst_id, WEIGHT_REVIEW))
+        u = authors_neo4j_id_to_idx[src_id]
+        v = authors_neo4j_id_to_idx[dst_id]
+        
+        edges.append((u, v, WEIGHT_REVIEW))
 
-    return authors, edges
-
-
-def build_graph(authors, edges):
-    id_to_index = {neo4j_id: idx for idx, neo4j_id in enumerate(authors.keys())}
-    idx_to_name = {idx: name for idx, name in enumerate(authors.values())}
-    g = AdjacencyListGraph(len(authors))
-    for src_id, dst_id, w in edges:
-        u, v = id_to_index[src_id], id_to_index[dst_id]
-        g.addEdge(u, v, w)
-    return g, idx_to_name
+    return idx_to_name_map, edges
 
 
-def draw_graph(graph, idx_to_name, indices_to_render):
-    """Desenha o grafo aplicando o filtro de índices"""
-    st.subheader("Visualização Gráfica das Interações de Review")
+def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
+    """Constrói um grafo usando a classe de implementação fornecida."""
+    st.info(f"Construindo grafo ({impl_class.__name__}) com {vertex_count} vértices e {len(edges)} arestas...")
+    graph = impl_class(vertex_count)
+    for u, v, w in edges:
+        try:
+            graph.addEdge(u, v, w)
+        except Exception as e:
+            st.warning(f"Falha ao adicionar aresta ({u}->{v}) peso {w}: {e}")
+    st.success("Grafo construído com sucesso.")
+    return graph
+
+
+def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list):
+    """
+    Desenha o grafo (layout de força) usando a API Abstrata,
+    independente da implementação.
+    """
+    st.subheader("Visualização Gráfica (Layout de Força)")
 
     if not indices_to_render:
         st.warning("Nenhum autor corresponde aos filtros selecionados.")
@@ -102,23 +132,28 @@ def draw_graph(graph, idx_to_name, indices_to_render):
 
     n = len(indices_to_render)
 
-    # ================= PARÂMETROS DE REPULSÃO =================
-    area = 2000000               # Aumente a "área lógica" — mais espaço para nós se repelirem
-    k = math.sqrt(area / n) * 2 # Dobra o raio de repulsão base
-    iterations = 800            # Mais iterações para estabilizar
-    cooling = 0.95              # Menos resfriamento por iteração (movimento mais longo)
-    max_step = k * 8            # Limite maior de deslocamento
-    repulsion_factor = 20000        # Força de repulsão multiplicada
-    attraction_factor = 0.4     # Força de atração reduzida
+    # ================= PARÂMETROS DE REPULSÃO (Sem alterações) =================
+    area = 2000000               
+    k = math.sqrt(area / n) * 2 
+    iterations = 800            
+    cooling = 0.95              
+    max_step = k * 8            
+    repulsion_factor = 20000        
+    attraction_factor = 0.4     
 
-    # ================= INICIALIZAÇÃO =================
+    # ================= INICIALIZAÇÃO  =================
     positions = {i: [random.uniform(-k, k), random.uniform(-k, k)] for i in indices_to_render}
 
     # ================= SIMULAÇÃO =================
-    for _ in range(iterations):
+    
+    # --- CORREÇÃO DA BARRA DE PROGRESSO ---
+    # 1. Crie a barra UMA VEZ e salve na variável 'progress_bar'
+    progress_bar = st.progress(0, text="Calculando layout de força...")
+    
+    for iter_num in range(iterations):
         disp = {i: [0.0, 0.0] for i in indices_to_render}
 
-        # Repulsão
+        # Repulsão 
         for i, v in enumerate(indices_to_render):
             for j in range(i + 1, n):
                 u = indices_to_render[j]
@@ -131,10 +166,9 @@ def draw_graph(graph, idx_to_name, indices_to_render):
                 disp[u][0] -= (dx / dist) * force
                 disp[u][1] -= (dy / dist) * force
 
-        # Atração
         for u in indices_to_render:
-            for v, w in graph.adj_out[u].items():
-                if v in indices_to_render:
+            for v in indices_to_render: 
+                if graph.hasEdge(u, v): 
                     dx = positions[u][0] - positions[v][0]
                     dy = positions[u][1] - positions[v][1]
                     dist = math.sqrt(dx * dx + dy * dy) + 0.01
@@ -154,6 +188,13 @@ def draw_graph(graph, idx_to_name, indices_to_render):
                 positions[v][1] += (dy / dist) * step
 
         max_step *= cooling
+        if (iter_num + 1) % (iterations // 20) == 0:
+             # 2. ATUALIZE a barra de progresso existente
+             progress_bar.progress((iter_num + 1) / iterations, text=f"Calculando layout: {iter_num+1}/{iterations} iterações")
+
+    # 3. Limpe a barra de progresso após a conclusão
+    progress_bar.empty()
+    # --- FIM DA CORREÇÃO ---
 
     # Normalização
     xs = [positions[i][0] for i in indices_to_render]
@@ -165,14 +206,15 @@ def draw_graph(graph, idx_to_name, indices_to_render):
         positions[i][0] = (positions[i][0] - (min_x + max_x) / 2) * scale
         positions[i][1] = (positions[i][1] - (min_y + max_y) / 2) * scale
 
-    # Desenho
+    # Desenho 
+    st.success("Layout calculado. Desenhando gráfico...")
     plt.figure(figsize=(16, 12))
     plt.axis("off")
 
     # Arestas
     for u in indices_to_render:
-        for v, w in graph.adj_out[u].items():
-            if v in indices_to_render:
+        for v in indices_to_render:
+            if graph.hasEdge(u, v): 
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
                 plt.arrow(
@@ -181,7 +223,7 @@ def draw_graph(graph, idx_to_name, indices_to_render):
                     fc="gray", ec="gray", alpha=0.5, length_includes_head=True
                 )
 
-    # Nós
+    # Nós (Sem alterações)
     for i in indices_to_render:
         x, y = positions[i]
         plt.scatter(x, y, s=120, color="#5DADE2", edgecolors="black", zorder=3)
@@ -191,11 +233,30 @@ def draw_graph(graph, idx_to_name, indices_to_render):
     plt.clf()
 
 
-# ============== STREAMLIT APP ==============
+# ============== STREAMLIT APP (Modificado) ==============
 def app():
-    st.set_page_config(layout="wide")
+    # st.set_page_config(layout="wide") # Removido
     st.title("🔎 Grafo de Interações de Review entre Autores")
 
+    # --- INICIALIZAÇÃO DO STATE ---
+    if 'graph_obj' not in st.session_state:
+        st.session_state.graph_obj = None
+    if 'vertex_names_list' not in st.session_state:
+        st.session_state.vertex_names_list = []
+    if 'name_to_idx_map' not in st.session_state:
+        st.session_state.name_to_idx_map = {}
+    if 'idx_to_name_map' not in st.session_state:
+        st.session_state.idx_to_name_map = {}
+
+    # --- ESCOLHA DA IMPLEMENTAÇÃO ---
+    st.sidebar.header("Configuração da Geração")
+    impl_choice = st.sidebar.selectbox(
+        "Escolha a implementação do Grafo:",
+        ("Lista de Adjacência", "Matriz de Adjacência"),
+        key="review_impl_choice"
+    )
+
+    # --- FILTROS (Sem alterações) ---
     st.sidebar.header("Filtros")
     filter_with_edges = st.sidebar.checkbox(
         "Mostrar apenas autores com interações de saída", value=True
@@ -206,64 +267,102 @@ def app():
 
     st.markdown(
         """
-        Este aplicativo busca no **Neo4j** as interações de revisão e aprovação de Pull Requests.
-        Cada nó representa um autor, e uma aresta direcionada (→) indica que o autor revisou
-        uma PR criada por outro autor.  
+        Este aplicativo busca no Neo4j as interações de revisão e aprovação de Pull Requests.
         O peso da aresta representa a força da interação (padrão = 4 pontos por review).
         """
     )
 
+    # --- Conexão ---
     try:
-        neo4j_service = Neo4jService(NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD)
+        neo4j_service = get_neo4j_service()
     except Exception as e:
         st.error(f"Falha ao conectar ao Neo4j: {e}")
-        return
+        st.stop()
 
     if st.button("Gerar Grafo de Reviews"):
         with st.spinner("Carregando dados e construindo grafo..."):
-            authors, edges = fetch_review_edges(neo4j_service)
-            if not authors:
+            
+            idx_to_name, edges = fetch_review_edges(neo4j_service)
+            if not idx_to_name:
                 st.warning("Nenhum dado para exibir.")
+                st.session_state.graph_obj = None # Limpa state
+                st.session_state.vertex_names_list = []
+                st.session_state.name_to_idx_map = {}
+                st.session_state.idx_to_name_map = {}
                 return
+            
+            vertex_count = len(idx_to_name)
 
-            graph, idx_to_name = build_graph(authors, edges)
+            if impl_choice == "Lista de Adjacência":
+                impl_class = AdjacencyListGraph
+            # else:
+                # impl_class = AdjacencyMatrixGraph # <-- Reativado
 
-            # --- FILTRO ---
-            author_activity = []
-            for u in range(len(idx_to_name)):
-                total_weight = sum(graph.adj_out[u].values()) if u < len(graph.adj_out) and graph.adj_out[u] else 0
-                author_activity.append((u, total_weight))
+            graph = build_graph(impl_class, vertex_count, edges)
+            
+            # --- Armazenar no Session State ---
+            st.session_state.graph_obj = graph
+            st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
+            st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
+            st.session_state.idx_to_name_map = idx_to_name # Salva o mapa original
+            
 
-            if filter_with_edges:
-                author_activity = [item for item in author_activity if item[1] > 0]
+    # --- RENDERIZAÇÃO (SEMPRE RODA SE O GRAFO EXISTIR) ---
+    if st.session_state.get("graph_obj") is not None:
+        graph = st.session_state.graph_obj
+        idx_to_name = st.session_state.idx_to_name_map
+        
+        st.success(f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
-            author_activity.sort(key=lambda item: item[1], reverse=True)
+        # --- FILTRO (Modificado para usar API) ---
+        author_activity = []
+        for u in range(graph.getVertexCount()):
+            total_weight = 0
+            # Calcula o peso total de saída (mais complexo com API)
+            for v in range(graph.getVertexCount()):
+                if graph.hasEdge(u, v):
+                    total_weight += graph.getEdgeWeight(u, v)
+            author_activity.append((u, total_weight))
 
-            if limit > 0:
-                author_activity = author_activity[:limit]
+        if filter_with_edges:
+            author_activity = [item for item in author_activity if item[1] > 0]
+        author_activity.sort(key=lambda item: item[1], reverse=True)
+        if limit > 0:
+            author_activity = author_activity[:limit]
+        indices_to_render = [u for u, _ in author_activity]
+        
+        # --- RENDERIZAÇÃO EM ABAS (MOSTRAR AS 3 COISAS) ---
+        st.divider()
+        st.header("Representações do Grafo")
+        
+        tab1, tab2, tab3 = st.tabs(["Visualização (Força)", "Lista de Adjacência", "Matriz de Adjacência"])
 
-            indices_to_render = [u for u, _ in author_activity]
+        with tab1:
+            if not indices_to_render:
+                st.warning("Nenhum autor corresponde aos filtros selecionados.")
+            else:
+                draw_graph(graph, idx_to_name, indices_to_render)
 
-            # --- Desenho do grafo filtrado ---
-            draw_graph(graph, idx_to_name, indices_to_render)
+        with tab2:
+            st.info("Representação do grafo completo como Lista de Adjacência.")
+            adj_list_data = graph_service.get_adjacency_list()
+            readable_list = {idx_to_name.get(i, str(i)): {idx_to_name.get(v, str(v)): w for v, w in neighbors.items()} 
+                             for i, neighbors in enumerate(adj_list_data) if neighbors}
+            st.json(readable_list)
 
-            # --- Lista de adjacência filtrada ---
-            st.markdown("---")
-            st.subheader("Lista de Adjacência (Mesma Ordem do SVG)")
-            for u in indices_to_render:
-                nome_u = idx_to_name.get(u, f"Nó {u}")
-                vizinhos = graph.adj_out[u]
-                if vizinhos:
-                    vizinhos_ordenados = sorted(vizinhos.items(), key=lambda item: item[1], reverse=True)
-                    linha = ", ".join(f"{idx_to_name[v]} (peso {w})" for v, w in vizinhos_ordenados)
-                    st.write(f"**{nome_u} →** {linha}")
-                else:
-                    st.write(f"**{nome_u}**: sem saídas.")
+        with tab3:
+            st.info("Representação do grafo completo como Matriz de Adjacência.")
+            matrix_data = graph_service.get_adjacency_matrix()
+            matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
+            df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
+            st.dataframe(df, height=600)
+    
+    else:
+        st.info("Escolha uma implementação e clique em 'Gerar Grafo de Reviews' para carregar os dados.")
 
-    try:
-        neo4j_service.close()
-    except:
-        pass
+
+    # --- CHAMA O HELPER DA SIDEBAR (SEMPRE) ---
+    draw_graph_api_sidebar()
 
 
 if __name__ == "__main__":

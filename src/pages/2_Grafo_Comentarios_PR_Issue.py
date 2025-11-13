@@ -1,24 +1,35 @@
 import streamlit as st
-import svgwrite
 from collections import defaultdict
 import streamlit.components.v1 as components
 from typing import List, Tuple, Optional 
 import math
+import pandas as pd
+import matplotlib.pyplot as plt # <--- NOVO
+import random                   # <--- NOVO
 
+# Importa AMBAS as implementações
 try:
     from src.core.AdjacencyListGraph import AdjacencyListGraph
+    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph # <--- RE-ATIVADO
+    from src.core.AbstractGraph import AbstractGraph # Importa o "Pai"
 except ImportError as e:
-    raise ImportError(
-        "Não foi possível importar AdjacencyListGraph. "
-        "Verifique a estrutura de pastas."
-    ) from e
+    st.error(f"Erro crítico ao importar classes de Grafo: {e}")
+    st.stop()
 
-# Importa a FUNÇÃO que obtém a conexão
 try:
     from src.utils.neo4j_connector import get_neo4j_service
 except ImportError:
     st.error("Não foi possível encontrar 'src.utils.neo4j_connector'. Verifique o arquivo.")
     st.stop()
+
+try:
+    from src.utils.streamlit_helpers import draw_graph_api_sidebar
+except ImportError:
+    st.error("Não foi possível encontrar 'src.utils.streamlit_helpers'. Crie o arquivo.")
+    st.stop()
+
+import src.services.graph_service as graph_service
+
 
 # ============== CONFIGURAÇÕES E QUERIES (Sem alterações) ==============
 LABEL_AUTHOR = "Author"
@@ -47,14 +58,16 @@ WHERE src <> dst AND (target:{LABEL_ISSUE} OR target:{LABEL_PR})
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
+# ============== FUNÇÕES DE DADOS E GRAFO (Sem alterações) ==============
 
 def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
+    # ... (código idêntico)
     print("Buscando todos os autores...")
     authors_rows = neo4j_service.query(AUTHORS_QUERY)
     if not authors_rows:
         print("Nenhum autor encontrado no Neo4j.")
         return {}, []
-    print(f"  Encontrados {len(authors_rows)} autores.")
+    print(f"   Encontrados {len(authors_rows)} autores.")
     id_to_index: dict[int, int] = {}
     idx_to_name: dict[int, str] = {}
     for idx, row in enumerate(authors_rows):
@@ -68,7 +81,7 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
     for row in comment_on_issue_pr_rows:
         if row["srcId"] in id_to_index and row["dstId"] in id_to_index:
             weighted_edges_map[(row["srcId"], row["dstId"])] += WEIGHTS["COMMENT"]
-    print(f"  Encontradas {len(comment_on_issue_pr_rows)} interações de comentário.")
+    print(f"   Encontradas {len(comment_on_issue_pr_rows)} interações de comentário.")
     edges: list[tuple[int, int, float]] = []
     for (src_neo4j_id, dst_neo4j_id), total_weight in weighted_edges_map.items():
         u = id_to_index[src_neo4j_id]
@@ -78,285 +91,255 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
     print(f"Total de {len(edges)} arestas ponderadas únicas formadas após agregação.")
     return idx_to_name, edges    
 
-def build_graph(vertex_count: int, edges: list[tuple[int, int, float]]) -> AdjacencyListGraph:
-    print("Construindo grafo de adjacência...")
-    graph = AdjacencyListGraph(vertex_count)
+def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
+    """Constrói um grafo usando a classe de implementação fornecida."""
+    print(f"Construindo grafo com implementação: {impl_class.__name__}")
+    graph = impl_class(vertex_count)
     for u_idx, v_idx, weight in edges:
         graph.addEdge(u_idx, v_idx, weight)
     return graph
 
-def display_graph_svg_streamlit(
-    graph: AdjacencyListGraph,
-    idx_to_name: dict[int, str],
-    indices_to_render: list[int]
-): 
-    MARGIN_LEFT = 20
-    MARGIN_TOP = 20
-    NODE_BOX_WIDTH = 40
-    NODE_BOX_HEIGHT = 40
-    HORIZONTAL_ADJ_NODE_SPACING = 40
-    VERTICAL_NODE_SPACING = 60
-    ARROW_LENGTH = 30 
+# ============== NOVA FUNÇÃO DE VISUALIZAÇÃO (MATPLOTLIB) ==============
+
+def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list):
+    """
+    Desenha o grafo (layout de força) usando a API Abstrata,
+    independente da implementação.
+    """
+    st.subheader("Visualização Gráfica (Layout de Força)")
+
+    if not indices_to_render:
+        st.warning("Nenhum autor corresponde aos filtros selecionados.")
+        return
+
     n = len(indices_to_render)
 
-    # Comprimento máximo da lista de adjacência (baseado APENAS nos nós renderizados)
-    max_adj_list_len = 0
-    for u in indices_to_render: 
-        if u < len(getattr(graph, "adj_out", [])):
-            max_adj_list_len = max(max_adj_list_len, len(graph.adj_out[u]))
+    # ================= PARÂMETROS DE REPULSÃO =================
+    area = 2000000               
+    k = math.sqrt(area / n) * 2 
+    iterations = 800            
+    cooling = 0.95              
+    max_step = k * 8            
+    repulsion_factor = 20000        
+    attraction_factor = 0.4     
 
-    total_width = (
-        MARGIN_LEFT
-        + NODE_BOX_WIDTH
-        + (ARROW_LENGTH if max_adj_list_len > 0 else 0)
-        + (max_adj_list_len * (NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING)) 
-        + MARGIN_LEFT
-    )
-    total_height = (
-        MARGIN_TOP
-        + (n * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING)) 
-        - (VERTICAL_NODE_SPACING if n > 0 else 0)
-        + MARGIN_TOP
-    )
+    # ================= INICIALIZAÇÃO =================
+    positions = {i: [random.uniform(-k, k), random.uniform(-k, k)] for i in indices_to_render}
 
-    dwg = svgwrite.Drawing(size=("100%", "100%"))
-    dwg.viewbox(0, 0, total_width, total_height)
-    dwg.attribs["preserveAspectRatio"] = "xMinYMin meet"
+    # ================= SIMULAÇÃO =================
+    progress_bar = st.progress(0, text="Calculando layout de força...")
+    for iter_num in range(iterations):
+        disp = {i: [0.0, 0.0] for i in indices_to_render}
 
-    arrow = dwg.marker(insert=(ARROW_LENGTH/2, 5), size=(10, 10), orient="auto", markerUnits="strokeWidth")
-    arrow.add(dwg.path(d=f"M 0 0 L {ARROW_LENGTH/2} 5 L 0 10 z", fill="black"))
-    dwg.defs.add(arrow)
+        # Repulsão
+        for i, v in enumerate(indices_to_render):
+            for j in range(i + 1, n):
+                u = indices_to_render[j]
+                dx = positions[v][0] - positions[u][0]
+                dy = positions[v][1] - positions[u][1]
+                dist = math.sqrt(dx * dx + dy * dy) + 0.01
+                force = repulsion_factor * (k * k) / dist
+                disp[v][0] += (dx / dist) * force
+                disp[v][1] += (dy / dist) * force
+                disp[u][0] -= (dx / dist) * force
+                disp[u][1] -= (dy / dist) * force
 
-    for i, u in enumerate(indices_to_render): 
-        y_pos = MARGIN_TOP + i * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING)
-        author_name = idx_to_name.get(u, str(u))
-        dwg.add(
-            dwg.rect(
-                insert=(MARGIN_LEFT, y_pos),
-                size=(NODE_BOX_WIDTH, NODE_BOX_HEIGHT),
-                fill="lightblue",
-                stroke="black"
-            )
-        )
-        dwg.add(
-            dwg.text(
-                author_name,
-                insert=(
-                    MARGIN_LEFT + NODE_BOX_WIDTH / 2,
-                    y_pos + NODE_BOX_HEIGHT / 2 + 5
-                ),
-                text_anchor="middle",
-                font_size="12px",
-                font_family="Arial"
-            )
-        )
+        # Atração 
+        for u in indices_to_render:
+            for v in indices_to_render:
+                if graph.hasEdge(u, v):
+                    dx = positions[u][0] - positions[v][0]
+                    dy = positions[u][1] - positions[v][1]
+                    dist = math.sqrt(dx * dx + dy * dy) + 0.01
+                    force = attraction_factor * (dist * dist) / k
+                    disp[u][0] -= (dx / dist) * force
+                    disp[u][1] -= (dy / dist) * force
+                    disp[v][0] += (dx / dist) * force
+                    disp[v][1] += (dy / dist) * force
 
-        if u < len(getattr(graph, "adj_out", [])):
-            for j, (v, weight) in enumerate(graph.adj_out[u].items()):
-                if v not in indices_to_render:
-                    continue
-                try:
-                    target_node_index = indices_to_render.index(v)
-                except ValueError:
-                    continue # O nó de destino não está na lista de renderização, pular
+        # Atualiza posições
+        for v in indices_to_render:
+            dx, dy = disp[v]
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist > 0:
+                step = min(max_step, dist)
+                positions[v][0] += (dx / dist) * step
+                positions[v][1] += (dy / dist) * step
 
-                x_start_line = MARGIN_LEFT + NODE_BOX_WIDTH
-                y_start_line = y_pos + NODE_BOX_HEIGHT / 2
+        max_step *= cooling
+        if (iter_num + 1) % (iterations // 20) == 0:
+             progress_bar.progress((iter_num + 1) / iterations, text=f"Calculando layout: {iter_num+1}/{iterations} iterações")
+    
+    progress_bar.empty()
 
-                x_end_line = MARGIN_LEFT # Ajuste para que a seta aponte para a caixa do nó de destino
-                y_end_line = MARGIN_TOP + target_node_index * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING) + NODE_BOX_HEIGHT / 2
+    # Normalização
+    xs = [positions[i][0] for i in indices_to_render]
+    ys = [positions[i][1] for i in indices_to_render]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    scale = 10
+    for i in indices_to_render:
+        positions[i][0] = (positions[i][0] - (min_x + max_x) / 2) * scale
+        positions[i][1] = (positions[i][1] - (min_y + max_y) / 2) * scale
 
-                dwg.add(
-                    dwg.line(
-                        start=(x_start_line, y_start_line),
-                        end=(x_end_line, y_end_line),
-                        stroke="blue",
-                        stroke_width="1", # Adicionado para melhor visualização
-                        marker_end="url(#" + arrow.get_id() + ")" # Referencia o ID do marcador
-                    )
+    # Desenho
+    st.success("Layout calculado. Desenhando gráfico...")
+    plt.figure(figsize=(16, 12))
+    plt.axis("off")
+
+    # Arestas
+    for u in indices_to_render:
+        for v in indices_to_render:
+            if graph.hasEdge(u, v): # USA A API ABSTRATA
+                x1, y1 = positions[u]
+                x2, y2 = positions[v]
+                plt.arrow(
+                    x1, y1, x2 - x1, y2 - y1,
+                    head_width=10000, head_length=10000,
+                    fc="gray", ec="gray", alpha=0.5, length_includes_head=True
                 )
-                dwg.add(
-                    dwg.text(
-                        f"{weight:.1f}",
-                        insert=((x_start_line + x_end_line) / 2, (y_start_line + y_end_line) / 2 - 5),
-                        text_anchor="middle",
-                        font_size="10px",
-                        fill="gray"
-                    )
-                )
-    svg_string = dwg.tostring()
 
-    # Wrapper HTML (idêntico, usa total_width/height calculados)
-    visible_h_px = 600
-    html_container = f"""
-    <div style="width:100%; height:{visible_h_px}px; overflow:auto; border:1px solid #444; background:#0d0d1a;">
-      <div style="width:{int(total_width)}px; height:{int(total_height)}px;">
-        {svg_string}
-      </div>
-    </div>
-    """
-    components.html(html_container, height=visible_h_px + 24, scrolling=True)
+    # Nós
+    for i in indices_to_render:
+        x, y = positions[i]
+        plt.scatter(x, y, s=120, color="#5DADE2", edgecolors="black", zorder=3)
+        plt.text(x, y, idx_to_name[i], fontsize=8, ha="center", va="center", color="black")
 
-def desenhar_grafo_svg(nos: List[str], arestas: List[Tuple[str, str]], destaque: Optional[List[str]] = None, width=600, height=600) -> str:
-    """
-    Gera um SVG simples de um grafo.
-    - nos: lista de IDs dos nós
-    - arestas: lista de tuplas (origem, destino)
-    - destaque: lista de IDs de nós a destacar (opcional)
-    """
-    n = len(nos)
-    if n == 0:
-        return "<svg width='{}' height='{}'></svg>".format(width, height)
-    raio = min(width, height) // 2 - 50
-    cx, cy = width // 2, height // 2
-    pos = {}
-    for i, no in enumerate(nos):
-        ang = 2 * math.pi * i / n
-        x = cx + raio * math.cos(ang)
-        y = cy + raio * math.sin(ang)
-        pos[no] = (x, y)
-    svg = [f"<svg width='{width}' height='{height}' style='background:#f9f9f9'>"]
-    for origem, destino in arestas:
-        x1, y1 = pos[origem]
-        x2, y2 = pos[destino]
-        svg.append(f"<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='#888' stroke-width='2' marker-end='url(#arrow)' />")
-    svg.append("""
-    <defs>
-      <marker id='arrow' markerWidth='10' markerHeight='10' refX='10' refY='5' orient='auto' markerUnits='strokeWidth'>
-        <path d='M0,0 L10,5 L0,10 L2,5 z' fill='#888' />
-      </marker>
-    </defs>
-    """)
-    for no in nos:
-        x, y = pos[no]
-        cor = '#ff4136' if destaque and no in destaque else '#0074d9'
-        svg.append(f"<circle cx='{x}' cy='{y}' r='18' fill='{cor}' stroke='#333' stroke-width='2' />")
-        svg.append(f"<text x='{x}' y='{y+5}' text-anchor='middle' font-size='13' fill='#fff'>{no}</text>")
-    svg.append("</svg>")
-    return ''.join(svg)
+    st.pyplot(plt)
+    plt.clf()
 
-# ============== FUNÇÃO APP  ==============
+
+# ============== FUNÇÃO APP (MODIFICADA) ==============
 
 def app():
-    st.title("Grafo de Interações entre Autores (Comentários em PRs e Issues)")
-    st.markdown(
-        """
-        Esta página exibe um grafo direcionado representando as interações entre autores
-        de comentários em Pull Requests e Issues no repositório GitHub.
-        """
-    )
+    st.title("Grafo de Interações entre Autores (Comentários)")
+    st.markdown("Use esta página para carregar dados e analisar as interações.")
 
-    # --- FILTROS NA SIDEBAR ---
-    st.sidebar.header("Opções de Filtro")
-    filter_with_edges = st.sidebar.checkbox(
-        "Mostrar apenas autores com interações de saída",
-        value=True
+    # --- INICIALIZAÇÃO DO STATE ---
+    if 'graph_obj' not in st.session_state:
+        st.session_state.graph_obj = None
+    if 'vertex_names_list' not in st.session_state:
+        st.session_state.vertex_names_list = []
+    if 'name_to_idx_map' not in st.session_state:
+        st.session_state.name_to_idx_map = {}
+    if 'idx_to_name_map' not in st.session_state:
+        st.session_state.idx_to_name_map = {}
+
+    # --- ESCOLHA DA IMPLEMENTAÇÃO ---
+    st.sidebar.header("Configuração da Geração")
+    impl_choice = st.sidebar.selectbox(
+        "Escolha a implementação do Grafo:",
+        ("Lista de Adjacência", "Matriz de Adjacência")
     )
-    limit = st.sidebar.number_input(
-        "Limitar autores (0 = sem limite, Top N por atividade)",
-        min_value=0,
-        value=0,
-        step=10
-    )
+    
+    # --- FILTROS DE VISUALIZAÇÃO ---
+    st.sidebar.header("Opções de Filtro (Visualização)")
+    filter_with_edges = st.sidebar.checkbox("Mostrar apenas autores com interações", value=True)
+    limit = st.sidebar.number_input("Limitar autores (0 = sem limite)", min_value=0, value=0, step=10)
 
     # --- LÓGICA DE CONEXÃO ---
     try:
         neo4j_service = get_neo4j_service()
     except Exception as e:
         st.error(f"Erro ao obter conexão com Neo4j: {e}")
-        st.info("Verifique se o app.py foi executado e a conexão foi estabelecida.")
         st.stop()
 
-
-    if st.button("Gerar e Exibir Grafo"):
-        with st.spinner("Processando dados e construindo grafo..."):
+    # --- BOTÃO DE GERAR ---
+    if st.button("Gerar e Analisar Grafo"):
+        with st.spinner("Buscando dados e construindo grafo..."):
             try:
-                # 1. Busca e constrói o GRAFO COMPLETO
-                idx_to_name, edges_with_weights = fetch_authors_and_edges(neo4j_service)
+                idx_to_name, edges = fetch_authors_and_edges(neo4j_service)
                 if not idx_to_name:
                     st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
+                    st.session_state.graph_obj = None
+                    # Limpa o resto do state
+                    st.session_state.vertex_names_list = []
+                    st.session_state.name_to_idx_map = {}
+                    st.session_state.idx_to_name_map = {}
                     return
 
                 vertex_count = len(idx_to_name)
-                graph = build_graph(vertex_count, edges_with_weights) # Renomeado para evitar conflito
+                
+                # Escolhe a classe concreta baseada na seleção
+                if impl_choice == "Lista de Adjacência":
+                    impl_class = AdjacencyListGraph
+                # else:
+                    # impl_class = AdjacencyMatrixGraph # <--- RE-ATIVADO
+                
+                graph = build_graph(impl_class, vertex_count, edges)
 
-                # --- 2. LÓGICA DE FILTRO ---
-
-                # Calcula a atividade (peso total de saída) para todos os autores
-                author_activity = []
-                # Ajuste: A lista de todos os índices deve vir do idx_to_name
-                all_indices_from_map = list(idx_to_name.keys())
-                for u_neo4j_id in all_indices_from_map:
-                    # Precisamos converter o neo4j_id para o índice interno do grafo
-                    # para acessar graph.adj_out, que usa os índices internos 0..N-1
-                    u_internal_idx = list(idx_to_name.keys()).index(u_neo4j_id)
-                    total_weight = 0
-                    if u_internal_idx < len(graph.adj_out) and graph.adj_out[u_internal_idx]:
-                        total_weight = sum(graph.adj_out[u_internal_idx].values())
-                    author_activity.append((u_internal_idx, total_weight)) # (índice interno, peso_total)
-
-                # Aplica o filtro da checkbox
-                if filter_with_edges:
-                    author_activity = [item for item in author_activity if item[1] > 0]
-
-                # Ordena pela atividade (do maior para o menor)
-                author_activity.sort(key=lambda item: item[1], reverse=True)
-
-                # Aplica o limite (se definido)
-                if limit > 0:
-                    author_activity = author_activity[:limit]
-
-                # Cria a lista final de ÍNDICES INTERNOS para renderizar
-                indices_to_render_internal = [u_internal_idx for u_internal_idx, weight in author_activity]
-                # --- FIM DA LÓGICA DE FILTRO ---
-
-                if not indices_to_render_internal:
-                    st.warning("Nenhum autor corresponde aos filtros selecionados.")
-                    return
-
-                # --- 3. Preparar dados para desenhar_grafo_svg ---
-                # A função desenhar_grafo_svg espera uma lista de STRINGS para os nós
-                node_names_for_svg = [idx_to_name[list(idx_to_name.keys())[idx]] for idx in indices_to_render_internal]
-
-                edges_for_svg = []
-                for u_internal_idx in indices_to_render_internal:
-                    if u_internal_idx < len(graph.adj_out):
-                        for v_internal_idx, weight in graph.adj_out[u_internal_idx].items():
-                            if v_internal_idx in indices_to_render_internal:
-                                # Convertendo os índices internos de volta para os nomes dos autores (strings)
-                                # que a função desenhar_grafo_svg espera.
-                                source_name = idx_to_name[list(idx_to_name.keys())[u_internal_idx]]
-                                target_name = idx_to_name[list(idx_to_name.keys())[v_internal_idx]]
-                                edges_for_svg.append((source_name, target_name))
-
-                # --- 4. Chamar desenhar_grafo_svg e exibir o resultado ---
-                # O layout circular da função desenhar_grafo_svg não oferece zoom e pan nativamente
-                # através de um SVG puro, mas o Streamlit components.html adiciona scroll automático
-                # se o conteúdo for maior que a área.
-                st.info("A visualização atual do grafo utiliza um layout circular. "
-                        "Note que esta função de desenho não exibe os pesos das arestas. "
-                        "O scroll vertical e horizontal estará disponível se o grafo for muito grande.")
-
-                svg_content = desenhar_grafo_svg(
-                    nos=node_names_for_svg,
-                    arestas=edges_for_svg,
-                    width=800, # Ajuste a largura conforme necessário
-                    height=800 # Ajuste a altura conforme necessário
-                )
-
-                # Para permitir scroll, podemos envolver o SVG em um div com overflow
-                html_container = f"""
-                <div style="width:100%; height:820px; overflow:auto; border:1px solid #444; background:#0d0d1a;">
-                  <div style="width:800px; height:800px;">
-                    {svg_content}
-                  </div>
-                </div>
-                """
-                components.html(html_container, height=840, scrolling=True) # Ajusta a altura do componente Streamlit
+                # --- Armazenar no Session State ---
+                st.session_state.graph_obj = graph
+                st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
+                st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
+                st.session_state.idx_to_name_map = idx_to_name # Salva o mapa original
 
             except Exception as e:
                 st.error(f"Ocorreu um erro ao gerar o grafo: {e}")
                 st.exception(e)
+                st.session_state.graph_obj = None # Limpa em caso de erro
+
+    
+    # --- RENDERIZAÇÃO (SEMPRE RODA SE O GRAFO EXISTIR) ---
+    
+    if st.session_state.get("graph_obj") is not None:
+        graph = st.session_state.graph_obj
+        idx_to_name = st.session_state.idx_to_name_map
+        
+        st.success(f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
+
+        # --- LÓGICA DE FILTRO (Usa a API do grafo) ---
+        author_activity = []
+        for i in range(graph.getVertexCount()):
+            # Usamos a API abstrata, não importa a implementação
+            out_degree = graph.getVertexOutDegree(i)
+            author_activity.append((i, out_degree))
+
+        if filter_with_edges:
+            author_activity = [item for item in author_activity if item[1] > 0]
+        author_activity.sort(key=lambda item: item[1], reverse=True)
+        if limit > 0:
+            author_activity = author_activity[:limit]
+        indices_to_render_internal = [i for i, degree in author_activity]
+        
+        # (NÃO PRECISAMOS MAIS PREPARAR DADOS PARA O SVG)
+        
+        # --- RENDERIZAÇÃO EM ABAS (MOSTRAR AS 3 COISAS) ---
+        st.divider()
+        st.header("Representações do Grafo")
+        
+        tab1, tab2, tab3 = st.tabs(["Visualização (Força)", "Lista de Adjacência", "Matriz de Adjacência"]) # <--- TÍTULO MUDADO
+
+        with tab1:
+            st.info("Visualização do grafo filtrado (layout de força):")
+            # --- CHAMADA DA FUNÇÃO DE DESENHO MODIFICADA ---
+            if not indices_to_render_internal:
+                st.warning("Nenhum autor corresponde aos filtros selecionados.")
+            else:
+                draw_graph(graph, idx_to_name, indices_to_render_internal)
+
+        with tab2:
+            st.info("Representação do grafo completo como Lista de Adjacência.")
+            # Chama o service, que chama graph.getAsAdjacencyList()
+            adj_list_data = graph_service.get_adjacency_list()
+            readable_list = {idx_to_name.get(i, str(i)): {idx_to_name.get(v, str(v)): w for v, w in neighbors.items()} 
+                             for i, neighbors in enumerate(adj_list_data) if neighbors}
+            st.json(readable_list)
+
+        with tab3:
+            st.info("Representação do grafo completo como Matriz de Adjacência.")
+            # Chama o service, que chama graph.getAsAdjacencyMatrix()
+            matrix_data = graph_service.get_adjacency_matrix()
+            matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
+            df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
+            st.dataframe(df, height=600)
+            
+    else:
+        st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
+
+    
+    # --- CHAMA O HELPER DA SIDEBAR (SEMPRE) ---
+    draw_graph_api_sidebar()
 
 
 if __name__ == "__main__":

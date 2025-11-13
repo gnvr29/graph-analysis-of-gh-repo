@@ -1,15 +1,18 @@
 from abc import ABC, abstractmethod
 
-class Graph(ABC):
+class AbstractGraph(ABC):
     """
-    Classe base abstrata para implementações de grafos
+    Classe base ABSTRATA para implementações de grafos.
+    Define o "contrato" (API) que todas as implementações concretas
+    (como AdjacencyListGraph e AdjacencyMatrixGraph) devem seguir,
+    conforme especificado no trabalho prático.
+    
+    Os métodos estão na ordem exata da "API obrigatória" do PDF.
     """
 
     def __init__(self, num_vertices: int):
-        # Validação básica
         if num_vertices < 0:
             raise ValueError("O número de vértices não pode ser negativo.")
-        
         self._num_vertices = num_vertices
         self._edge_count = 0
         self._vertex_weights = [0.0] * num_vertices
@@ -38,7 +41,7 @@ class Graph(ABC):
         pass
 
     @abstractmethod
-    def addEdge(self, u: int, v: int, weight: float = 1.0) -> None:
+    def addEdge(self, u: int, v: int, weight: float = 1.0) -> bool:
         """Adiciona uma aresta (u, v) com um peso."""
         pass
 
@@ -50,12 +53,12 @@ class Graph(ABC):
     def isSucessor(self, u: int, v: int) -> bool:
         """Verifica se v é sucessor de u (existe aresta u -> v)."""
         self._validate_edge_vertices(u, v)
-        return self.hasEdge(u, v)
+        return self.hasEdge(u, v) 
 
     def isPredecessor(self, u: int, v: int) -> bool:
         """Verifica se v é predecessor de u (existe aresta v -> u)."""
         self._validate_edge_vertices(u, v)
-        return self.hasEdge(v, u)
+        return self.hasEdge(v, u) 
 
     def isDivergent(self, u1: int, v1: int, u2: int, v2: int) -> bool:
         """Verifica se as arestas (u1, v1) e (u2, v2) são divergentes."""
@@ -85,10 +88,10 @@ class Graph(ABC):
         """Retorna o grau de saída do vértice v."""
         pass
 
-    def setVertexWeight(self, v: int, weight: float) -> None:
+    def setVertexWeight(self, v: int, w: float) -> None:
         """Define o peso do vértice v."""
         self._validate_vertex(v)
-        self._vertex_weights[v] = weight
+        self._vertex_weights[v] = w
 
     def getVertexWeight(self, v: int) -> float:
         """Retorna o peso do vértice v."""
@@ -108,10 +111,9 @@ class Graph(ABC):
     @abstractmethod
     def isConnected(self) -> bool:
         """Verifica se o grafo é conexo."""
-        # Para grafos direcionados, isso geralmente significa "fracamente conexo"
         pass
 
-    def isEmpty(self) -> bool:
+    def isEmptyGraph(self) -> bool:
         """Verifica se o grafo está vazio (não tem arestas)."""
         return self.getEdgeCount() == 0
 
@@ -120,6 +122,21 @@ class Graph(ABC):
         """Verifica se o grafo é completo."""
         pass
 
+    @abstractmethod
     def exportToGEPHI(self, path: str) -> None:
         """Exporta o grafo para um arquivo no formato GEPHI."""
+        pass
+
+    @abstractmethod
+    def getAsAdjacencyList(self) -> list[dict[int, float]]:
+        """
+        Retorna a representação do grafo como uma lista de adjacência.
+        """
+        pass
+
+    @abstractmethod
+    def getAsAdjacencyMatrix(self) -> list[list[float]]:
+        """
+        Retorna a representação do grafo como uma matriz de adjacência.
+        """
         pass
