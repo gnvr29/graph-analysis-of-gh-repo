@@ -1,21 +1,17 @@
 import streamlit as st
-# Corrigindo o import para corresponder ao nome do arquivo que criamos
-from src.core.AbstractGraph import Graph
+from src.core.AbstractGraph import AbstractGraph
 from typing import cast
 
-def _get_graph_from_session() -> Graph:
+def _get_graph_from_session() -> AbstractGraph:
     """
     Helper interno para buscar, validar e retornar o objeto de grafo
     armazenado no session_state.
     """
     if 'graph_obj' not in st.session_state or st.session_state.graph_obj is None:
         raise ValueError("Grafo não foi gerado ou carregado no state.")
-    
-    graph = cast(Graph, st.session_state.graph_obj)
-    
-    if not isinstance(graph, Graph):
-        raise TypeError("O objeto em 'graph_obj' não é uma instância de Graph.")
-        
+    graph = cast(AbstractGraph, st.session_state.graph_obj)
+    if not isinstance(graph, AbstractGraph):
+        raise TypeError("O objeto em 'graph_obj' não é uma instância de AbstractGraph.")
     return graph
 
 def get_vertex_count() -> int:
@@ -27,8 +23,6 @@ def get_edge_count() -> int:
     """Retorna o número de arestas no grafo."""
     graph = _get_graph_from_session()
     return graph.getEdgeCount()
-
-# --- Métodos de Manipulação de Arestas ---
 
 def has_edge(u: int, v: int) -> bool:
     """Verifica se existe uma aresta (u, v)."""
@@ -48,7 +42,6 @@ def remove_edge(u: int, v: int) -> None:
     graph.removeEdge(u, v)
     # Nota: Isso modifica o grafo no state.
 
-# --- Métodos de Relação (Sucessor, Predecessor) ---
 
 def is_successor(u: int, v: int) -> bool:
     """Verifica se v é sucessor de u (aresta u -> v)."""
@@ -59,8 +52,6 @@ def is_predecessor(u: int, v: int) -> bool:
     """Verifica se v é predecessor de u (aresta v -> u)."""
     graph = _get_graph_from_session()
     return graph.isPredecessor(u, v)
-
-# --- Métodos de Relação (Divergente, Convergente, Incidente) ---
 
 def is_divergent(u1: int, v1: int, u2: int, v2: int) -> bool:
     """Verifica se as arestas (u1, v1) e (u2, v2) são divergentes."""
@@ -87,8 +78,6 @@ def get_vertex_out_degree(v: int) -> int:
     graph = _get_graph_from_session()
     return graph.getVertexOutDegree(v)
 
-# --- Métodos de Peso (Vértice) ---
-
 def set_vertex_weight(v: int, weight: float) -> None:
     """Define o peso do vértice v."""
     graph = _get_graph_from_session()
@@ -98,8 +87,6 @@ def get_vertex_weight(v: int) -> float:
     """Retorna o peso do vértice v."""
     graph = _get_graph_from_session()
     return graph.getVertexWeight(v)
-
-# --- Métodos de Peso (Aresta) ---
 
 def set_edge_weight(u: int, v: int, weight: float) -> None:
     """Define o peso da aresta (u, v)."""
@@ -119,16 +106,24 @@ def is_connected() -> bool:
 def is_empty() -> bool:
     """Verifica se o grafo está vazio (sem arestas)."""
     graph = _get_graph_from_session()
-    return graph.isEmpty()
+    return graph.isEmptyGraph()
 
 def is_complete() -> bool:
     """Verifica se o grafo é completo."""
     graph = _get_graph_from_session()
     return graph.isCompleteGraph()
 
-# --- Métodos de Exportação ---
-
 def export_to_gephi(path: str) -> None:
     """Exporta o grafo para um arquivo no formato GEPHI."""
     graph = _get_graph_from_session()
     graph.exportToGEPHI(path)
+
+def get_adjacency_list() -> list[dict[int, float]]:
+    """Retorna a representação do grafo como lista de adjacência."""
+    graph = _get_graph_from_session()
+    return graph.getAsAdjacencyList()
+
+def get_adjacency_matrix() -> list[list[float]]:
+    """Retorna a representação do grafo como matriz de adjacência."""
+    graph = _get_graph_from_session()
+    return graph.getAsAdjacencyMatrix()
