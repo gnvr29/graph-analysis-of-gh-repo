@@ -9,7 +9,7 @@ import random
 
 try:
     from src.core.AdjacencyListGraph import AdjacencyListGraph
-    # from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
+    from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
     from src.core.AbstractGraph import AbstractGraph 
 except ImportError as e:
     st.error(f"Erro crítico ao importar classes de Grafo: {e}")
@@ -262,8 +262,8 @@ def app():
                 
                 if impl_choice == "Lista de Adjacência":
                     impl_class = AdjacencyListGraph
-                # else:
-                    # impl_class = AdjacencyMatrixGraph
+                else:
+                    impl_class = AdjacencyMatrixGraph
                 
                 graph = build_graph(impl_class, vertex_count, edges)
 
