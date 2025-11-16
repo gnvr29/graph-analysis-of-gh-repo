@@ -20,21 +20,46 @@ except ImportError as e:
 def truncate_name(name: str, max_len: int = 12) -> str:
     return name if len(name) <= max_len else name[:max_len - 3] + "..."
 
+def _prepare_svg_for_download(svg_content: str, width: int, height: int) -> str:
+    """
+    Modifica a string SVG para incluir ou ajustar os atributos width e height
+    na tag <svg> raiz, visando melhorar a visualização ao ser baixada.
+    Esta modificação é aplicada *apenas* à string SVG que será baixada,
+    não afetando a renderização no Streamlit ou a geração original do SVG.
+    """
+    match = re.search(r'<svg(?P<attributes>.*?)(?<!/)>', svg_content, re.DOTALL)
+    
+    if match:
+        attributes = match.group('attributes')
+        
+        attributes = re.sub(r'\s+width="[^"]*"', '', attributes)
+        attributes = re.sub(r'\s+height="[^"]*"', '', attributes)
+        
+        new_svg_tag = f'<svg width="{width}px" height="{height}px" {attributes.strip()}>'
+        
+        return new_svg_tag + svg_content[match.end():]
+    
+    return svg_content
 
 # ============== FUNÇÃO DE DISPLAY ==============
 
-def display_adjacency_list_svg_streamlit(
+def _render_adjacency_list_svg(
     graph: "AdjacencyListGraph", 
     idx_to_name: dict[int, str], 
-    indices_to_render: list[int]  
+    indices_to_render: list[int],
+    graph_data_attribute: str, # e.g., "adj_out" ou "adj_in"
+    title: str,
+    download_filename_prefix: str,
+    is_predecessor_view: bool = False
 ) -> None:
     """
-    Exibe a lista de adjacência do grafo como um SVG,
-    renderizando APENAS os índices fornecidos em 'indices_to_render'.
+    Gera e exibe a lista de adjacência do grafo como um SVG no Streamlit,
+    com suporte para sucessores ou antecessores.
     """
     
     n = len(indices_to_render) 
     if n == 0:
+        st.info(f"Nenhum autor selecionado para exibir a {title.lower()}.")
         return
 
     NODE_BOX_WIDTH = 120
@@ -64,7 +89,7 @@ def display_adjacency_list_svg_streamlit(
 
     dwg = svgwrite.Drawing(size=("100%", "100%"))
     dwg.attribs["preserveAspectRatio"] = "xMinYMin meet"
-    dwg.viewbox(0, 0, total_width, total_height) # vai ser sobrescrito depois 
+    dwg.viewbox(0, 0, total_width, total_height) 
     dwg.defs.add(dwg.style(f"""
         text {{ font-family: '{FONT_FAMILY}'; }}
         .fullname {{ visibility: hidden; fill: #FFF; pointer-events: none; }}
@@ -72,20 +97,12 @@ def display_adjacency_list_svg_streamlit(
         g:hover rect {{ stroke: #FFD700; stroke-width: 2px; }}
     """))
 
-    for row_index in range(n):
-        y_mid = MARGIN_TOP + row_index * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING) + NODE_BOX_HEIGHT / 2
-        dwg.add(dwg.line(
-            start=(MARGIN_LEFT - 10, y_mid),
-            end=(total_width + (MARGIN_LEFT - 10), y_mid),
-            stroke="#1a1a1a",
-            stroke_width=1
-        ))
-
     for row_index, u in enumerate(indices_to_render):
         u_box_x = MARGIN_LEFT
         u_box_y = MARGIN_TOP + row_index * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING) 
         author_name = idx_to_name.get(u, f"Nó {u}") 
 
+        # Node principal
         g_src = dwg.g(id=f"node-{u}")
         g_src.add(dwg.rect(
             insert=(u_box_x, u_box_y),
@@ -103,6 +120,8 @@ def display_adjacency_list_svg_streamlit(
             fill="#111"
         )
         g_src.add(t_src)
+
+        # Tooltip para o node principal
         t_full_src = dwg.text(
             author_name,
             insert=(u_box_x + PADDING_TEXT_X, u_box_y + NODE_BOX_HEIGHT + 12),
@@ -115,19 +134,19 @@ def display_adjacency_list_svg_streamlit(
 
         current_cursor_x = u_box_x + NODE_BOX_WIDTH
                 
-        neighbors = []
-        adj_out = getattr(graph, "adj_out", {})
-        if isinstance(adj_out, dict):
-            neighbors = adj_out.get(u, {}).items()
-        elif isinstance(adj_out, list) and u < len(adj_out):
-            neighbors = adj_out[u].items()
-        neighbors = sorted(neighbors, key=lambda it: it[1], reverse=True)
+        neighbors_map = getattr(graph, graph_data_attribute, {})
+        neighbors_for_u = {}
+        if isinstance(neighbors_map, dict):
+            neighbors_for_u = neighbors_map.get(u, {})
+        elif isinstance(neighbors_map, list) and u < len(neighbors_map) and isinstance(neighbors_map[u], dict):
+            neighbors_for_u = neighbors_map[u]
+        
+        neighbors = sorted(neighbors_for_u.items(), key=lambda it: it[1], reverse=True)
+        # Filtra os vizinhos por aqueles foram definidos no filtro
         neighbors = [(v, w) for (v, w) in neighbors if v in indices_to_render]
 
         if neighbors:
-            current_element_end_x = u_box_x + NODE_BOX_WIDTH 
-
-            # Desenha conexão para cada vizinho
+            # Conexoes para cada vizinho
             for i, (v, w) in enumerate(neighbors):
                 adj_name = idx_to_name.get(v, f"Nó {v}")
                 adj_display = truncate_name(adj_name)
@@ -137,19 +156,22 @@ def display_adjacency_list_svg_streamlit(
                 if i > 0:
                     current_cursor_x += HORIZONTAL_ADJ_NODE_SPACING
                 
+                v_box_y = u_box_y 
                 line_start_x = current_cursor_x
 
-                if i > 0: # Se não for o primeiro vizinho, retire o espaçamento entre eles
+                if i > 0: 
                     line_start_x -= HORIZONTAL_ADJ_NODE_SPACING
-                
-                # A ponta da seta está a ARROW_LENGTH de onde a linha começou
-                arrow_tip_x = line_start_x + ARROW_LENGTH
-                
-                # A caixa do vizinho começa exatamente onde a seta termina
-                v_box_x = arrow_tip_x 
-                v_box_y = u_box_y # Vizinhos na mesma linha Y que o nó fonte
 
-                # Linha
+                arrow_tip_x = line_start_x + ARROW_LENGTH
+                v_box_x = arrow_tip_x
+
+                arrow_points = [
+                    (arrow_tip_x, line_y),
+                    (arrow_tip_x - ARROW_HEAD_SIZE, line_y - ARROW_HEAD_SIZE / 2),
+                    (arrow_tip_x - ARROW_HEAD_SIZE, line_y + ARROW_HEAD_SIZE / 2),
+                ]
+                
+                # Linha da Seta
                 dwg.add(dwg.line(
                     start=(line_start_x, line_y),
                     end=(arrow_tip_x, line_y),
@@ -157,23 +179,19 @@ def display_adjacency_list_svg_streamlit(
                     stroke_width=2
                 ))
                 # Seta
-                dwg.add(dwg.polygon(
-                    points=[
-                        (arrow_tip_x, line_y), 
-                        (arrow_tip_x - ARROW_HEAD_SIZE, line_y - ARROW_HEAD_SIZE / 2),
-                        (arrow_tip_x - ARROW_HEAD_SIZE, line_y + ARROW_HEAD_SIZE / 2),
-                    ],
-                    fill=STROKE_COLOR
-                ))
+                dwg.add(dwg.polygon(points=arrow_points, fill=STROKE_COLOR))
+                
                 # Peso
+                weight_text_x = (line_start_x + arrow_tip_x) / 2
                 dwg.add(dwg.text(
                     str(w),
-                    insert=((line_start_x + arrow_tip_x) / 2, line_y - 8),
+                    insert=(weight_text_x, line_y - 8),
                     text_anchor="middle",
                     font_size=TEXT_SIZE - 2,
                     fill="#00BFFF"
                 ))
-                # Caixa do vizinho
+
+                # Node para o vizinho
                 g_adj = dwg.g(id=f"node-{u}-to-{v}")
                 g_adj.add(dwg.rect(
                     insert=(v_box_x, v_box_y),
@@ -182,7 +200,7 @@ def display_adjacency_list_svg_streamlit(
                     stroke=STROKE_COLOR,
                     rx=4, ry=4
                 ))
-                # Texto do vizinho
+                # Texto para vizinho
                 t_adj = dwg.text(
                     adj_display,
                     insert=(v_box_x + PADDING_TEXT_X, v_box_y + PADDING_TEXT_Y),
@@ -191,9 +209,14 @@ def display_adjacency_list_svg_streamlit(
                     fill="#111"
                 )
                 g_adj.add(t_adj)
-                # Tooltip do vizinho
+
+                if not is_predecessor_view:
+                    tooltip_text = f"{adj_name} (peso: {w})"
+                else:
+                    tooltip_text = f"{adj_name} (peso de {adj_name} para {author_name}: {w})"
+
                 t_full_adj = dwg.text(
-                    f"{adj_name} (peso: {w})",
+                    tooltip_text,
                     insert=(v_box_x + PADDING_TEXT_X, v_box_y + NODE_BOX_HEIGHT + 12),
                     text_anchor="middle",
                     font_size=TEXT_SIZE - 2
@@ -202,20 +225,18 @@ def display_adjacency_list_svg_streamlit(
                 g_adj.add(t_full_adj)
                 dwg.add(g_adj)  
 
-                # Atualiza o X para o próximo vizinho
-                current_element_end_x = v_box_x + NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING
                 current_cursor_x = v_box_x + NODE_BOX_WIDTH
 
         max_rendered_content_x = max(max_rendered_content_x, current_cursor_x)
 
-    # --- Fim do Loop Principal ---
+    # --- fim do loop principal ---
 
     total_width = max_rendered_content_x + MARGIN_LEFT
+
     dwg.viewbox(0, 0, total_width, total_height) 
 
     svg_string = dwg.tostring()
 
-    # Wrapper HTML (idêntico, usa total_width/height calculados)
     visible_h_px = 600
     html_container = f"""
     <div style="width:100%; height:{visible_h_px}px; overflow:auto; border:1px solid #444; background:#0d0d1a;">
@@ -224,45 +245,61 @@ def display_adjacency_list_svg_streamlit(
       </div>
     </div>
     """
+    
+    st.subheader(title) 
     components.html(html_container, height=visible_h_px + 24, scrolling=True)
 
-    st.info("Passe o mouse sobre as caixas para ver o nome completo e o peso agregado.")
+    st.info("Passe o mouse sobre as caixas para ver o nome completo e os detalhes da conexão.")
 
     modified_svg_for_download = _prepare_svg_for_download(svg_string, int(total_width), int(total_height))
 
-    # Download
+    # Botao de download
     st.download_button(
-        "Baixar visualização (SVG)",
+        f"Baixar {download_filename_prefix.replace('_', ' ')}.svg",
         data=modified_svg_for_download.encode("utf-8"),
-        file_name="lista_adjacencia_filtrada.svg",
+        file_name=f"{download_filename_prefix}.svg",
         mime="image/svg+xml"
     )
 
-    # Legenda
+# ============== FUNÇÃO PRINCIPAL DE DISPLAY NO STREAMLIT ==============
+
+def display_adjacency_lists_streamlit(
+    graph: "AdjacencyListGraph", 
+    idx_to_name: dict[int, str], 
+    indices_to_render: list[int]  
+) -> None:
+    """
+    Exibe as listas de adjacência para sucessores e antecessores em dois SVGs separados.
+    """
+    
+    # Exibir lista de sucessores
+    _render_adjacency_list_svg(
+        graph=graph,
+        idx_to_name=idx_to_name,
+        indices_to_render=indices_to_render,
+        graph_data_attribute="adj_out",
+        title="Lista de Adjacência: Sucessores",
+        download_filename_prefix="lista_adjacencia_sucessores",
+        is_predecessor_view=False
+    )
+    
+    st.markdown("---") 
+    
+    # Exibir lista de antecessores
+    _render_adjacency_list_svg(
+        graph=graph,
+        idx_to_name=idx_to_name,
+        indices_to_render=indices_to_render,
+        graph_data_attribute="adj_in", 
+        title="Lista de Adjacência: Predecessores",
+        download_filename_prefix="lista_adjacencia_predecessores",
+        is_predecessor_view=True
+    )
+
+    # Legenda de pesos
     st.markdown("---")
-    st.subheader(f"Legenda dos Pesos (Mostrando {n} autores)")
+    st.subheader(f"Legenda dos Pesos (Para {len(indices_to_render)} autores)")
     st.write(f"- Comentário em Issue/PR: {WEIGHTS.get('COMMENT', 'N/A')}")
     st.write(f"- Abertura de Issue comentada: {WEIGHTS.get('ISSUE_COMMENTED', 'N/A')}")
     st.write(f"- Revisão/Aprovação de PR: {WEIGHTS.get('REVIEW', 'N/A')}")
     st.write(f"- Merge de PR: {WEIGHTS.get('MERGE', 'N/A')}")
-
-def _prepare_svg_for_download(svg_content: str, width: int, height: int) -> str:
-    """
-    Modifica a string SVG para incluir ou ajustar os atributos width e height
-    na tag <svg> raiz, visando melhorar a visualização ao ser baixada.
-    Esta modificação é aplicada *apenas* à string SVG que será baixada,
-    não afetando a renderização no Streamlit ou a geração original do SVG.
-    """
-    match = re.search(r'<svg(?P<attributes>.*?)(?<!/)>', svg_content, re.DOTALL)
-    
-    if match:
-        attributes = match.group('attributes')
-        
-        attributes = re.sub(r'\s+width="[^"]*"', '', attributes)
-        attributes = re.sub(r'\s+height="[^"]*"', '', attributes)
-        
-        new_svg_tag = f'<svg width="{width}px" height="{height}px" {attributes.strip()}>'
-        
-        return new_svg_tag + svg_content[match.end():]
-    
-    return svg_content
