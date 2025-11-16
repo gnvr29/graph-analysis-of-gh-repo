@@ -4,7 +4,12 @@ import streamlit.components.v1 as components
 from typing import List, Tuple, Optional 
 import math
 import pandas as pd
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
+
+from pages._shared_queries import (WEIGHTS, AUTHORS_QUERY, COMMENT_ON_ISSUE_PR_QUERY)
+from src.services.adjacency_list_service import display_adjacency_list_svg_streamlit
+from src.services.adjacency_matrix_service import df_to_svg
+
 import random                   
 
 try:
@@ -28,34 +33,6 @@ except ImportError:
     st.stop()
 
 import src.services.graph_service as graph_service
-
-
-# ============== CONFIGURAÇÕES E QUERIES  ==============
-LABEL_AUTHOR = "Author"
-LABEL_ISSUE = "Issue"
-LABEL_PR = "PullRequest"
-LABEL_COMMENT = "Comment"
-REL_AUTHORED_COMMENT = "AUTHORED"
-REL_COMMENT_ON = "HAS_COMMENT"
-REL_CREATED = "CREATED"
-
-WEIGHTS = {
-    "COMMENT": 2.0,
-}
-
-AUTHORS_QUERY = f"""
-MATCH (a:{LABEL_AUTHOR})
-RETURN id(a) AS id, coalesce(a.login, toString(id(a))) AS name
-ORDER BY name
-"""
-
-COMMENT_ON_ISSUE_PR_QUERY = f"""
-MATCH (src:{LABEL_AUTHOR})-[:{REL_AUTHORED_COMMENT}]->(comment:{LABEL_COMMENT})
-MATCH (target: {LABEL_ISSUE}|{LABEL_PR})-[:{REL_COMMENT_ON}]->(comment)
-MATCH (target)<-[:{REL_CREATED}]-(dst:{LABEL_AUTHOR})
-WHERE src <> dst AND (target:{LABEL_ISSUE} OR target:{LABEL_PR})
-RETURN id(src) AS srcId, id(dst) AS dstId
-"""
 
 # ============== FUNÇÕES DE DADOS E GRAFO ==============
 
@@ -317,17 +294,40 @@ def app():
         with tab2:
             st.info("Representação do grafo completo como Lista de Adjacência.")
             adj_list_data = graph_service.get_adjacency_list()
-            readable_list = {idx_to_name.get(i, str(i)): {idx_to_name.get(v, str(v)): w for v, w in neighbors.items()} 
-                             for i, neighbors in enumerate(adj_list_data) if neighbors}
-            st.json(readable_list)
+            
+            display_adjacency_list_svg_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
 
         with tab3:
             st.info("Representação do grafo completo como Matriz de Adjacência.")
             matrix_data = graph_service.get_adjacency_matrix()
             matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
             df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
-            st.dataframe(df, height=600)
             
+            if indices_to_render_internal:
+                selected = [idx_to_name[i] for i in indices_to_render_internal]
+                df = df.loc[selected, selected]
+
+            # Mostra dataframe
+            st.dataframe(df)
+
+            # Converte para SVG
+            svg = df_to_svg(df)
+            
+            # Botão para baixar
+            st.download_button(
+                "Baixar matriz (SVG)",
+                data=svg.encode("utf-8"),
+                file_name="matriz_adjacencia.svg",
+                mime="image/svg+xml",
+            )
+
+            st.markdown("---")
+            st.subheader("Legenda dos Pesos")
+            st.write(f"- Comentário em Issue/PR: {WEIGHTS.get('COMMENT', 'N/A')}")
+            st.write(f"- Abertura de Issue comentada: {WEIGHTS.get('ISSUE_COMMENTED', 'N/A')}")
+            st.write(f"- Revisão/Aprovação de PR: {WEIGHTS.get('REVIEW', 'N/A')}")
+            st.write(f"- Merge de PR: {WEIGHTS.get('MERGE', 'N/A')}")
+
     else:
         st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
