@@ -215,7 +215,8 @@ def app():
     st.sidebar.header("Opções de Filtro (Visualização)")
     filter_with_edges = st.sidebar.checkbox("Mostrar apenas autores com interações", value=True, key=f"{PAGE_ID}_filter_edges")
     limit = st.sidebar.number_input("Limitar autores (0 = sem limite)", min_value=0, value=0, step=10, key=f"{PAGE_ID}_limit")
-
+    st.session_state[f"{PAGE_ID}_current_author_limit"] = limit
+    
     # --- LÓGICA DE CONEXÃO ---
     try:
         neo4j_service = get_neo4j_service()
@@ -278,6 +279,19 @@ def app():
             author_activity = author_activity[:limit]
         indices_to_render_internal = [i for i, degree in author_activity]
         
+        filtered_vertex_names_list = []
+        filtered_name_to_idx_map = {}
+        
+        for original_idx in indices_to_render_internal:
+            author_name = st.session_state.idx_to_name_map[original_idx]
+            filtered_vertex_names_list.append(author_name)
+            # Mapeia o nome do autor filtrado para o seu índice ORIGINAL no grafo.
+            filtered_name_to_idx_map[author_name] = original_idx
+
+        # Atualiza os estados da sessão que serão usados pela sidebar
+        st.session_state.vertex_names_list = sorted(filtered_vertex_names_list)
+        st.session_state.name_to_idx_map = filtered_name_to_idx_map
+
         # --- RENDERIZAÇÃO EM ABAS ---
         st.divider()
         st.header("Representações do Grafo")
