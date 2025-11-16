@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from pages._shared_queries import (WEIGHTS, AUTHORS_QUERY, COMMENT_ON_ISSUE_PR_QUERY)
-from src.services.adjacency_list_service import display_adjacency_list_svg_streamlit
+from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
 
 import random                   
@@ -295,7 +295,7 @@ def app():
             st.info("Representação do grafo completo como Lista de Adjacência.")
             adj_list_data = graph_service.get_adjacency_list()
             
-            display_adjacency_list_svg_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
+            display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
 
         with tab3:
             st.info("Representação do grafo completo como Matriz de Adjacência.")
