@@ -52,21 +52,8 @@ def display_adjacency_list_svg_streamlit(
     NODE_FILL = "#E6E6E6"
     FONT_FAMILY = "Inter, Segoe UI, Roboto, Arial, sans-serif"
 
-    # Comprimento máximo da lista de adjacência (baseado APENAS nos nós renderizados)
-    max_adj_list_len = 0
-    for u in indices_to_render: 
-        if u < len(getattr(graph, "adj_out", [])):
-            max_adj_list_len = max(max_adj_list_len, len(graph.adj_out[u]))
-
-    total_width = MARGIN_LEFT + NODE_BOX_WIDTH # Largura para a margem esquerda e o nó fonte
-
-    if max_adj_list_len > 0:
-        # Cada nó adjacente requer o comprimento da seta, a largura da sua própria caixa
-        total_width += max_adj_list_len * (ARROW_LENGTH + NODE_BOX_WIDTH) 
-        # Adiciona o espaçamento horizontal *entre* os nós adjacentes (se houver mais de um)
-        total_width += (max_adj_list_len - 1) * HORIZONTAL_ADJ_NODE_SPACING
-    
-    total_width += MARGIN_LEFT # Largura para a margem direita
+    max_rendered_content_x = MARGIN_LEFT + NODE_BOX_WIDTH 
+    total_width = max_rendered_content_x + MARGIN_LEFT 
 
     total_height = (
         MARGIN_TOP
@@ -76,9 +63,8 @@ def display_adjacency_list_svg_streamlit(
     )
 
     dwg = svgwrite.Drawing(size=("100%", "100%"))
-    dwg.viewbox(0, 0, total_width, total_height)
     dwg.attribs["preserveAspectRatio"] = "xMinYMin meet"
-
+    dwg.viewbox(0, 0, total_width, total_height) # vai ser sobrescrito depois 
     dwg.defs.add(dwg.style(f"""
         text {{ font-family: '{FONT_FAMILY}'; }}
         .fullname {{ visibility: hidden; fill: #FFF; pointer-events: none; }}
@@ -90,7 +76,7 @@ def display_adjacency_list_svg_streamlit(
         y_mid = MARGIN_TOP + row_index * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING) + NODE_BOX_HEIGHT / 2
         dwg.add(dwg.line(
             start=(MARGIN_LEFT - 10, y_mid),
-            end=(total_width - (MARGIN_LEFT - 10), y_mid),
+            end=(total_width + (MARGIN_LEFT - 10), y_mid),
             stroke="#1a1a1a",
             stroke_width=1
         ))
@@ -126,6 +112,8 @@ def display_adjacency_list_svg_streamlit(
         t_full_src.attribs["class"] = "fullname"
         g_src.add(t_full_src)
         dwg.add(g_src)
+
+        current_cursor_x = u_box_x + NODE_BOX_WIDTH
                 
         neighbors = []
         adj_out = getattr(graph, "adj_out", {})
@@ -145,8 +133,12 @@ def display_adjacency_list_svg_streamlit(
                 adj_display = truncate_name(adj_name)
 
                 line_y = u_box_y + NODE_BOX_HEIGHT / 2
+    
+                if i > 0:
+                    current_cursor_x += HORIZONTAL_ADJ_NODE_SPACING
+                
+                line_start_x = current_cursor_x
 
-                line_start_x = current_element_end_x
                 if i > 0: # Se não for o primeiro vizinho, retire o espaçamento entre eles
                     line_start_x -= HORIZONTAL_ADJ_NODE_SPACING
                 
@@ -212,8 +204,14 @@ def display_adjacency_list_svg_streamlit(
 
                 # Atualiza o X para o próximo vizinho
                 current_element_end_x = v_box_x + NODE_BOX_WIDTH + HORIZONTAL_ADJ_NODE_SPACING
+                current_cursor_x = v_box_x + NODE_BOX_WIDTH
+
+        max_rendered_content_x = max(max_rendered_content_x, current_cursor_x)
 
     # --- Fim do Loop Principal ---
+
+    total_width = max_rendered_content_x + MARGIN_LEFT
+    dwg.viewbox(0, 0, total_width, total_height) 
 
     svg_string = dwg.tostring()
 
