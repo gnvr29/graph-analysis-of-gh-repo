@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 
 LABEL_AUTHOR = "Author"
 LABEL_ISSUE = "Issue"
@@ -58,13 +58,31 @@ RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
 
-def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
-    # Backwards-compatible wrapper: usa as novas funções
+def fetch_authors_and_edges(neo4j_service, enabled_interaction_types: Set[str]) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
+    """
+    Função principal para buscar autores e arestas, com configuração dos tipos de interação.
+    """
+    print("Buscando todos os autores...")
     id_to_index, idx_to_name = fetch_authors(neo4j_service)
     if not id_to_index:
+        print("Nenhum autor encontrado no Neo4j.")
         return {}, []
-    edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index)
-    edges = build_integrated_edges(edges_by_relation, WEIGHTS)
+    print(f"Encontrados {len(idx_to_name)} autores.") 
+
+    # Busca as arestas, considerando APENAS os tipos de interação habilitados
+    edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index, enabled_interaction_types)
+
+    filtered_weights = {k: v for k, v in WEIGHTS.items() if k in enabled_interaction_types}
+
+    # Constrói as arestas integradas com os pesos filtrados
+    edges = build_integrated_edges(edges_by_relation, filtered_weights)
+
+    if enabled_interaction_types:
+        print(f"Tipos de interações incluídos: {', '.join(enabled_interaction_types)}")
+    else:
+        print("Nenhum tipo de interação selecionado.")
+
+    print(f"Total de {len(edges)} arestas ponderadas únicas formadas após agregação.")
     return idx_to_name, edges
 
 
@@ -83,46 +101,48 @@ def fetch_authors(neo4j_service) -> Tuple[Dict[int, int], Dict[int, str]]:
     return id_to_index, idx_to_name
 
 
-def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int]) -> Dict[str, List[Tuple[int, int]]]:
-    """Busca no Neo4j e retorna arestas separadas por tipo de relação.
+def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled_interaction_types: Set[str]) -> Dict[str, List[Tuple[int, int]]]:
+    """
+    Busca no Neo4j e retorna arestas separadas por tipo de relação,
+    incluindo apenas os tipos especificados.
 
     Chaves: 'COMMENT', 'ISSUE_COMMENTED', 'REVIEW', 'MERGE'.
+
     Valores: listas de pares (u_index, v_index).
     """
-    edges: Dict[str, List[Tuple[int, int]]] = {
-        "COMMENT": [],
-        "ISSUE_COMMENTED": [],
-        "REVIEW": [],
-        "MERGE": [],
-    }
+    edges: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
 
-    # Comentários em issues/PRs
-    rows = neo4j_service.query(COMMENT_ON_ISSUE_PR_QUERY)
-    for row in rows:
-        src, dst = row["srcId"], row["dstId"]
-        if src in id_to_index and dst in id_to_index:
-            edges["COMMENT"].append((id_to_index[src], id_to_index[dst]))
+    if "COMMENT" in enabled_interaction_types:
+        # Comentários em issues/PRs
+        rows = neo4j_service.query(COMMENT_ON_ISSUE_PR_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["COMMENT"].append((id_to_index[src], id_to_index[dst]))
 
-    # Issues comentadas por outro usuário
-    rows = neo4j_service.query(ISSUE_COMMENTED_BY_OTHER_QUERY)
-    for row in rows:
-        src, dst = row["srcId"], row["dstId"]
-        if src in id_to_index and dst in id_to_index:
-            edges["ISSUE_COMMENTED"].append((id_to_index[src], id_to_index[dst]))
+    if "ISSUE_COMMENTED" in enabled_interaction_types:
+        # Issues comentadas por outro usuário
+        rows = neo4j_service.query(ISSUE_COMMENTED_BY_OTHER_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["ISSUE_COMMENTED"].append((id_to_index[src], id_to_index[dst]))
 
-    # Reviews / approvals
-    rows = neo4j_service.query(PR_REVIEW_APPROVAL_QUERY)
-    for row in rows:
-        src, dst = row["srcId"], row["dstId"]
-        if src in id_to_index and dst in id_to_index:
-            edges["REVIEW"].append((id_to_index[src], id_to_index[dst]))
+    if "REVIEW" in enabled_interaction_types:
+        # Reviews / approvals
+        rows = neo4j_service.query(PR_REVIEW_APPROVAL_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["REVIEW"].append((id_to_index[src], id_to_index[dst]))
 
-    # Merges
-    rows = neo4j_service.query(PR_MERGE_QUERY)
-    for row in rows:
-        src, dst = row["srcId"], row["dstId"]
-        if src in id_to_index and dst in id_to_index:
-            edges["MERGE"].append((id_to_index[src], id_to_index[dst]))
+    if "MERGE" in enabled_interaction_types:
+        # Merges
+        rows = neo4j_service.query(PR_MERGE_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["MERGE"].append((id_to_index[src], id_to_index[dst]))
 
     return edges
 
