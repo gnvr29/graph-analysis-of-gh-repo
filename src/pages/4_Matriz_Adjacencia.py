@@ -124,8 +124,6 @@ def app():
 
             graph = build_matrix(vertex_count, edges)
 
-            # Debug prints removed: matrix construction and sampling completed silently
-
             names = [idx_to_name[i] for i in range(vertex_count)]
             mat = [[graph.matrix[i][j] for j in range(vertex_count)] for i in range(vertex_count)]
             df = pd.DataFrame(mat, index=names, columns=names)

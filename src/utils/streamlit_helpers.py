@@ -189,7 +189,7 @@ def draw_graph_api_sidebar():
             except Exception as e:
                 st.error(f"Erro ao exportar: {e}")
 
-    # --- Expander 6: Métricas de Rede (apenas ponderadas, visual melhorada) ---
+    # --- Expander 6: Métricas de Rede ---
     with st.sidebar.expander("Métricas de Rede"):
         try:
             metric_choice = st.selectbox(
@@ -204,10 +204,8 @@ def draw_graph_api_sidebar():
 
             top_n = st.number_input("Top N (0 = todos)", min_value=0, value=10, step=1)
 
-            # Degree options (weighted only)
             degree_mode = st.selectbox("Modo (Degree)", ("total", "out", "in"))
 
-            # PageRank / Eigen params
             damping = st.slider("Damping (PageRank)", min_value=0.0, max_value=1.0, value=0.85)
             pr_iters = st.number_input("Iterações (PageRank)", min_value=10, value=100, step=10)
             eig_iters = st.number_input("Iterações (Eigenvector)", min_value=10, value=100, step=10)
@@ -261,7 +259,6 @@ def draw_graph_api_sidebar():
                         ).properties(height=40 * len(df))
                         st.altair_chart(chart, use_container_width=True)
 
-                    # CSV download
                     import io, csv
                     buf = io.StringIO()
                     writer = csv.writer(buf)

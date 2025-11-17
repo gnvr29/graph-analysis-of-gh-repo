@@ -87,6 +87,60 @@ Formato de entrada para as métricas: listas de adjacência `out_adj` e `in_adj`
   - Implementação: iteração de potência sobre A^T (usamos `in_adj` para eficiência). Normalizamos a cada iteração.
   - Observações: depende de convergência; para grafos grandes e esparsos é aceitável, mas exige atenção à normalização.
 
+  6) Como as funções novas trabalham (resumo prático)
+
+  - `DEFAULT_RELATION_WEIGHTS`:
+    - Dicionário com os pesos padrão usados para agregar relações: `{'COMMENT':2, 'ISSUE_COMMENTED':3, 'REVIEW':4, 'MERGE':5}`.
+
+  - `build_relation_edge_lists(edges_by_relation, *, default_weight=1.0)`:
+    - Entrada: `edges_by_relation` é um dict onde cada chave é uma relação (ex: `'COMMENT'`) e o valor é uma lista de pares `(u, v)` com índices inteiros de nós.
+    - Saída: dict relação -> lista de arestas `(u, v, w)` onde `w` é `default_weight` (útil para construir grafos separados por relação).
+
+  - `build_integrated_edges(edges_by_relation, weights=None)`:
+    - Agrega todas as listas de arestas em um grafo integrado ponderado.
+    - Para cada par `(u, v)` soma os pesos associados a cada relação conforme o dicionário `weights` (se `None`, usa `DEFAULT_RELATION_WEIGHTS`).
+    - Saída: lista de tuplas `(u, v, total_weight)` — uma entrada por par único com peso total.
+
+  - `build_relation_graphs_adjlists(n, edges_by_relation)`:
+    - Conveniência que transforma `edges_by_relation` em uma estrutura `relation -> (out_adj, in_adj)` onde cada adjlista usa peso 1.0 por aresta.
+    - `n` é o número de vértices; as listas de adjacência têm tamanho `n`.
+
+  - `build_integrated_graph_adjlists(n, edges_by_relation, weights=None)`:
+    - Retorna `(out_adj, in_adj)` do grafo integrado ponderado, usando `build_integrated_edges` internamente.
+
+  Observação prática: as páginas Streamlit do projeto (por exemplo `src/pages/4_Matriz_Adjacencia.py`) já chamam fluxos semelhantes: primeiro obtêm `idx_to_name` (mapa índice->nome) e `edges_by_relation` (ou arestas já agregadas), depois escolhem construir grafos separados ou o grafo integrado (com os pesos fornecidos) e finalmente convertem para `AdjacencyMatrixGraph` ou `AdjacencyListGraph` para exibir/exportar.
+
+  7) Visualização das métricas na sidebar
+
+  - Foi adicionada uma seção no helper de sidebar (`src/utils/streamlit_helpers.py`) chamada **Métricas de Rede** que calcula métricas ponderadas diretamente sobre o grafo atual em memória (via `src.services.graph_service.get_adjacency_list()`).
+  - Métricas disponíveis na UI (apenas ponderadas):
+    - `Degree (weighted)` — soma dos pesos das arestas (modo: `total`, `in` ou `out`).
+    - `Betweenness (weighted)` — versão ponderada (Brandes adaptado) que considera custo inverso ao peso.
+    - `PageRank` — iteração de potência usando distribuição ponderada por força de saída.
+    - `Eigenvector Centrality` — iteração de potência sobre A^T usando pesos de entrada.
+  - A UI mostra: uma breve interpretação da métrica, tabela Top-N com autores e score, gráfico de barras (Altair) e botão para baixar CSV com os resultados.
+
+  8) Testes adicionados
+
+  - Foram criados testes unitários em `tests/test_metrics.py` para validar:
+    - construção de listas por relação (`build_relation_edge_lists`),
+    - agregação integrada (`build_integrated_edges`) e
+    - geração de adjlists (`build_relation_graphs_adjlists` / `build_integrated_graph_adjlists`).
+  - Também foi criado `tests/test_pages_graphs.py` que carrega as páginas (`2_Grafo_Comentarios_PR_Issue.py` e `3_Grafo_Reviews.py`) e testa as funções de obtenção/transformação de autores e arestas com Neo4j mocks simples.
+
+  Como rodar os testes:
+  ```powershell
+  pytest -q
+  # ou apenas os novos testes
+  pytest -q tests/test_metrics.py tests/test_pages_graphs.py
+  ```
+
+  9) Recomendações rápidas
+
+  - Garanta que as páginas que constroem grafo populam `st.session_state['idx_to_name_map']` (mapa índice→nome). A sidebar usa essa chave para mostrar nomes legíveis nas tabelas de métricas.
+  - Se alterar os pesos, passe explicitamente um dicionário `weights` para `build_integrated_edges`/`build_integrated_graph_adjlists` para reprodutibilidade.
+
+
 5) Como rodar 
 
 - Requisitos: Python 3.10+ (o projeto foi testado em Python 3.13). Instale bibliotecas do `requirements.txt` se necessário.
