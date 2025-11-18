@@ -34,6 +34,8 @@ class AdjacencyListGraph(AbstractGraph):
         if not self.hasEdge(u, v):
             self.adj_out[u][v] = weight
             self.adj_in[v][u] = weight
+            self._vertex_weights[u] += weight
+            self._vertex_weights[v] += weight
             self._edge_count += 1
             return True
         else:
@@ -43,8 +45,12 @@ class AdjacencyListGraph(AbstractGraph):
         """Remove a aresta (u, v)."""
         self._validate_edge_vertices(u, v)
         if self.hasEdge(u, v):
+            weight_to_subtract = self.adj_out[u][v]
             del self.adj_out[u][v]
             del self.adj_in[v][u]
+
+            self._vertex_weights[u] -= weight_to_subtract 
+            self._vertex_weights[v] -= weight_to_subtract
             self._edge_count -= 1
 
     def getVertexInDegree(self, v: int) -> int:

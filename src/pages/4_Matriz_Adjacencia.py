@@ -95,8 +95,8 @@ def app():
             if not id_to_index:
                 st.warning("Nenhum autor encontrado no Neo4j.")
                 return
-
-            edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index)
+            habilitadas = {'COMMENT', 'ISSUE_COMMENTED', 'REVIEW', 'MERGE'}
+            edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index, enabled_interaction_types=habilitadas)
 
             if graph_mode.startswith("Integrado"):
                 edges = build_integrated_edges(edges_by_relation, WEIGHTS)
