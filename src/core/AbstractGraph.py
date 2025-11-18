@@ -140,3 +140,9 @@ class AbstractGraph(ABC):
         Retorna a representação do grafo como uma matriz de adjacência.
         """
         pass
+        
+    @abstractmethod
+    def addVertex(self) -> int:
+        """Adiciona um novo vértice ao grafo e retorna o índice criado."""
+
+        pass
