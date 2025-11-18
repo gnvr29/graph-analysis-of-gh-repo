@@ -124,26 +124,6 @@ def app():
 
             graph = build_matrix(vertex_count, edges)
 
-            try:
-                st.write(f"Vertices (count): {vertex_count}")
-                st.write(f"Arestas geradas (count): {len(edges)}")
-                st.write("Amostra de arestas (até 10):")
-                st.write(edges[:10])
-                st.write(f"Arestas no objeto grafo (getEdgeCount): {graph.getEdgeCount()}")
-                non_zero = []
-                for i in range(vertex_count):
-                    for j in range(vertex_count):
-                        if graph.matrix[i][j] != 0.0:
-                            non_zero.append((i, j, graph.matrix[i][j]))
-                            if len(non_zero) >= 10:
-                                break
-                    if len(non_zero) >= 10:
-                        break
-                st.write("Entradas não-zero encontradas (até 10):")
-                st.write(non_zero)
-            except Exception as _:
-                pass
-
             names = [idx_to_name[i] for i in range(vertex_count)]
             mat = [[graph.matrix[i][j] for j in range(vertex_count)] for i in range(vertex_count)]
             df = pd.DataFrame(mat, index=names, columns=names)

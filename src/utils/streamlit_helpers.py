@@ -1,6 +1,10 @@
 import streamlit as st
 import src.services.graph_service as graph_service
 import os
+import pandas as pd
+import altair as alt
+from src.analysis import metrics
+from typing import List, Tuple
 
 def draw_graph_api_sidebar():
     """
@@ -184,3 +188,86 @@ def draw_graph_api_sidebar():
                 st.success(f"Grafo salvo em: {full_path}")
             except Exception as e:
                 st.error(f"Erro ao exportar: {e}")
+
+    # --- Expander 6: Métricas de Rede ---
+    with st.sidebar.expander("Métricas de Rede"):
+        try:
+            metric_choice = st.selectbox(
+                "Escolha a métrica ponderada:",
+                (
+                    "Degree (weighted)",
+                    "Betweenness (weighted)",
+                    "PageRank",
+                    "Eigenvector Centrality",
+                ),
+            )
+
+            top_n = st.number_input("Top N (0 = todos)", min_value=0, value=10, step=1)
+
+            degree_mode = st.selectbox("Modo (Degree)", ("total", "out", "in"))
+
+            damping = st.slider("Damping (PageRank)", min_value=0.0, max_value=1.0, value=0.85)
+            pr_iters = st.number_input("Iterações (PageRank)", min_value=10, value=100, step=10)
+            eig_iters = st.number_input("Iterações (Eigenvector)", min_value=10, value=100, step=10)
+
+            st.markdown("---")
+            st.markdown("**Interpretação rápida:** métricas ponderadas usam os pesos definidos no projeto (COMMENT=2, ISSUE_COMMENTED=3, REVIEW=4, MERGE=5). Use Top N para limitar a visualização.")
+
+            if st.button("Calcular Métrica"):
+                try:
+                    adj_list = graph_service.get_adjacency_list()
+                    n = len(adj_list)
+                    out_adj: List[List[Tuple[int, float]]] = [ [(v, float(w)) for v, w in nbrs.items()] for nbrs in adj_list ]
+                    in_adj: List[List[Tuple[int, float]]] = [[] for _ in range(n)]
+                    for u, nbrs in enumerate(out_adj):
+                        for v, w in nbrs:
+                            in_adj[v].append((u, w))
+
+                    if metric_choice == "Degree (weighted)":
+                        scores = metrics.degree_centrality(out_adj, in_adj, weighted=True, mode=degree_mode)
+                        expl = "Degree ponderado: soma dos pesos das arestas (modo selecionado)."
+                    elif metric_choice == "Betweenness (weighted)":
+                        scores = metrics.betweenness_centrality_weighted(out_adj)
+                        expl = "Betweenness ponderado: contribuição em caminhos mínimos ponderados."
+                    elif metric_choice == "PageRank":
+                        scores = metrics.pagerank(out_adj, damping=damping, max_iter=pr_iters)
+                        expl = "PageRank: importância distribuída via arestas ponderadas (iteração de potência)."
+                    elif metric_choice == "Eigenvector Centrality":
+                        scores = metrics.eigenvector_centrality(out_adj, in_adj, max_iter=int(eig_iters))
+                        expl = "Eigenvector: influência considerando a importância dos vizinhos (autovetor)."
+                    else:
+                        st.error("Métrica desconhecida")
+                        scores = {}
+                        expl = ""
+
+                    items = sorted(scores.items(), key=lambda it: it[1], reverse=True)
+                    if top_n > 0:
+                        items = items[:top_n]
+
+                    names_map = st.session_state.get('idx_to_name_map') or st.session_state.get('idx_to_name', {})
+                    df = pd.DataFrame([{'Rank': i+1, 'Author': names_map.get(idx, str(idx)), 'Score': float(score)} for i, (idx, score) in enumerate(items)])
+
+                    st.subheader(f"Resultados — {metric_choice}")
+                    st.write(expl)
+                    st.table(df)
+
+                    if not df.empty:
+                        chart = alt.Chart(df).mark_bar().encode(
+                            x=alt.X('Score:Q'),
+                            y=alt.Y('Author:N', sort='-x'),
+                            tooltip=['Author', 'Score']
+                        ).properties(height=40 * len(df))
+                        st.altair_chart(chart, use_container_width=True)
+
+                    import io, csv
+                    buf = io.StringIO()
+                    writer = csv.writer(buf)
+                    writer.writerow(['rank', 'author', 'score'])
+                    for _, row in df.iterrows():
+                        writer.writerow([int(row['Rank']), row['Author'], float(row['Score'])])
+                    st.download_button('Baixar CSV', data=buf.getvalue().encode('utf-8'), file_name='metric_results.csv', mime='text/csv')
+
+                except Exception as e:
+                    st.error(f"Falha ao calcular métrica: {e}")
+        except Exception as e:
+            st.error(f"Erro preparando a UI de métricas: {e}")
