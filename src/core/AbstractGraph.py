@@ -15,7 +15,7 @@ class AbstractGraph(ABC):
             raise ValueError("O número de vértices não pode ser negativo.")
         self._num_vertices = num_vertices
         self._edge_count = 0
-        self._vertex_weights = [0.0] * num_vertices
+        self._vertex_weights = [1.0] * num_vertices
 
     def _validate_vertex(self, v: int):
         """Helper para lançar exceção de índice inválido."""
