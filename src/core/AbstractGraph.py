@@ -141,8 +141,36 @@ class AbstractGraph(ABC):
         """
         pass
         
-    @abstractmethod
     def addVertex(self) -> int:
-        """Adiciona um novo vértice ao grafo e retorna o índice criado."""
+        """Adiciona um novo vértice ao grafo e retorna o índice criado.
 
+        Implementação padrão: atualiza contadores e pesos de vértice,
+        e delega a expansão das estruturas internas para o hook
+        abstrato `_on_add_vertex(new_index)` que cada implementação
+        concreta deve fornecer.
+        """
+        new_index = self._num_vertices
+        # provisiona peso do novo vértice e incrementa contagem
+        self._vertex_weights.append(0.0)
+        self._num_vertices += 1
+
+        try:
+            # delega a responsabilidade de expandir estruturas (listas, matriz, etc.)
+            self._on_add_vertex(new_index)
+        except Exception as e:
+            # rollback em caso de falha na expansão da subclasse
+            self._num_vertices -= 1
+            self._vertex_weights.pop()
+            raise
+
+        return new_index
+
+    @abstractmethod
+    def _on_add_vertex(self, new_index: int) -> None:
+        """Hook abstrato chamado por `addVertex` para que a subclasse
+        expanda suas estruturas internas (ex.: adicionar nova linha/coluna
+        na matriz ou novos dicionários na lista de adjacência).
+
+        `new_index` é o índice atribuído ao novo vértice.
+        """
         pass

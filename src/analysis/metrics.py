@@ -31,6 +31,76 @@ def build_adjlists(n: int, edges: List[Tuple[int, int, float]]):
     return out_adj, in_adj
 
 
+# Default weights for integrated graph (can be overridden by callers)
+DEFAULT_RELATION_WEIGHTS = {
+    'COMMENT': 2,
+    'ISSUE_COMMENTED': 3,
+    'REVIEW': 4,
+    'MERGE': 5,
+}
+
+
+def build_relation_edge_lists(edges_by_relation: Dict[str, List[Tuple[int, int]]], *, default_weight: float = 1.0):
+    """Constrói listas de arestas ponderadas por relação.
+
+    Args:
+        edges_by_relation: dict onde a chave é o nome da relação (ex: 'COMMENT')
+            e o valor é uma lista de tuplas (u, v) com índices inteiros de nós.
+        default_weight: peso atribuído a cada aresta nas listas separadas (padrão 1.0).
+
+    Retorna:
+        dict: mapeamento relação -> lista de arestas (u, v, w).
+    """
+    result = {}
+    for rel, pairs in edges_by_relation.items():
+        result[rel] = [(int(u), int(v), float(default_weight)) for (u, v) in pairs]
+    return result
+
+
+def build_integrated_edges(edges_by_relation: Dict[str, List[Tuple[int, int]]],
+                           weights: Dict[str, float] = None):
+    """Agrega arestas de várias relações em um grafo integrado ponderado.
+
+    Cada aresta (u, v) presente em uma relação contribui com o peso definido
+    em `weights` para a soma total daquela aresta no grafo integrado.
+
+    Args:
+        edges_by_relation: dict relação -> lista de (u, v)
+        weights: dict relação -> peso (se None, usa DEFAULT_RELATION_WEIGHTS)
+
+    Retorna:
+        list de tuplas (u, v, total_weight) agregadas por par (u, v).
+    """
+    if weights is None:
+        weights = DEFAULT_RELATION_WEIGHTS
+
+    agg = {}
+    for rel, pairs in edges_by_relation.items():
+        w = float(weights.get(rel, 1.0))
+        for (u, v) in pairs:
+            key = (int(u), int(v))
+            agg[key] = agg.get(key, 0.0) + w
+
+    return [(u, v, wt) for (u, v), wt in agg.items()]
+
+
+def build_relation_graphs_adjlists(n: int, edges_by_relation: Dict[str, List[Tuple[int, int]]]):
+    """Retorna um dicionário relação -> (out_adj, in_adj) onde cada grafo usa peso 1.0."""
+    rel_graphs = {}
+    relation_edges = build_relation_edge_lists(edges_by_relation, default_weight=1.0)
+    for rel, edges in relation_edges.items():
+        out_adj, in_adj = build_adjlists(n, edges)
+        rel_graphs[rel] = (out_adj, in_adj)
+    return rel_graphs
+
+
+def build_integrated_graph_adjlists(n: int, edges_by_relation: Dict[str, List[Tuple[int, int]]],
+                                    weights: Dict[str, float] = None):
+    """Retorna as listas de adjacência do grafo integrado ponderado."""
+    edges = build_integrated_edges(edges_by_relation, weights=weights)
+    return build_adjlists(n, edges)
+
+
 def degree_centrality(out_adj: List[List[Tuple[int, float]]], in_adj: List[List[Tuple[int, float]]],
                       weighted: bool = True, mode: str = "total") -> Dict[int, float]:
     """Computa centralidade de grau.
@@ -240,6 +310,11 @@ def eigenvector_centrality(out_adj: List[List[Tuple[int, float]]], in_adj: List[
 
 __all__ = [
     "build_adjlists",
+    "DEFAULT_RELATION_WEIGHTS",
+    "build_relation_edge_lists",
+    "build_integrated_edges",
+    "build_relation_graphs_adjlists",
+    "build_integrated_graph_adjlists",
     "degree_centrality",
     "betweenness_centrality",
     "betweenness_centrality_weighted",
