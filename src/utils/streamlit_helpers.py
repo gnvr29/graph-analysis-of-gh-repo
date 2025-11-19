@@ -5,6 +5,7 @@ import pandas as pd
 import altair as alt
 from src.analysis import centrality_metrics
 from typing import List, Tuple
+from src.analysis import community_metrics 
 
 def draw_graph_api_sidebar():
     """
@@ -271,3 +272,71 @@ def draw_graph_api_sidebar():
                     st.error(f"Falha ao calcular métrica: {e}")
         except Exception as e:
             st.error(f"Erro preparando a UI de métricas: {e}")
+
+    with st.sidebar.expander("Métricas de Comunidade"):
+        try:
+            max_splits = st.number_input("Max Divisões (G-N)", min_value=1, value=5, step=1, key="comm_max_splits")
+
+            comm_metric_choice = st.selectbox(
+                "Escolha a métrica:",
+                ("Community Detection (Girvan-Newman)", "Bridging Ties"),
+            )
+
+            st.markdown("---")
+            st.markdown("**Interpretação rápida:** O **Girvan-Newman** (baseado em Betweenness Centrality) é não-ponderado e remove as arestas de maior intermediação para encontrar comunidades. O número de divisões afeta a granularidade.")
+
+            if st.button("Calcular Comunidade"):
+                adj_list = graph_service.get_adjacency_list()
+                n = len(adj_list)
+                out_adj: List[List[Tuple[int, float]]] = [ [(v, float(w)) for v, w in nbrs.items()] for nbrs in adj_list ]
+
+                names_map = st.session_state.get('idx_to_name_map') or st.session_state.get('idx_to_name', {})
+                
+                if comm_metric_choice == "Community Detection (Girvan-Newman)":
+                    communities = community_metrics.girvan_newman_community_detection(out_adj, max_splits=int(max_splits))
+                    expl = f"Comunidades encontradas após divisões (máximo {max_splits} remoções de arestas)."
+                    
+                    data = []
+                    for i, community in enumerate(communities):
+                        community_members = ", ".join([names_map.get(node_idx, str(node_idx)) for node_idx in community])
+                        data.append({
+                            'Comunidade': i + 1,
+                            'Tamanho': len(community),
+                            'Membros': community_members
+                        })
+                    
+                    st.subheader(f"Resultados — Detecção de Comunidades (Total: {len(communities)})")
+                    st.write(expl)
+                    st.table(pd.DataFrame(data)) 
+
+                elif comm_metric_choice == "Bridging Ties":
+                    communities = community_metrics.girvan_newman_community_detection(out_adj, max_splits=int(max_splits))
+                    
+                    bridging_ties = community_metrics.find_bridging_ties(out_adj, communities)
+                    expl = f"Arestas de ponte que conectam as {len(communities)} comunidades encontradas."
+                    
+                    data = []
+                    for u, v, w in bridging_ties:
+                        data.append({
+                            'Origem': names_map.get(u, str(u)),
+                            'Destino': names_map.get(v, str(v)),
+                            'Peso': float(w)
+                        })
+                    
+                    df = pd.DataFrame(data)
+                    df = df.sort_values(by='Peso', ascending=False)
+                    
+                    st.subheader(f"Resultados — Bridging Ties (Total: {len(df)})")
+                    st.write(expl)
+                    
+                    top_n_bridge = st.number_input("Top N Arestas de Ponte", min_value=0, value=10, step=1, key="bridge_top_n")
+                    if top_n_bridge > 0:
+                        df_display = df.head(top_n_bridge)
+                    else:
+                        df_display = df
+                        
+                    st.table(df_display) 
+
+        except Exception as e:
+            st.error(f"Falha ao calcular métrica de comunidade: {e}")
+            st.exception(e)
