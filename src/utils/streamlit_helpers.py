@@ -3,7 +3,7 @@ import src.services.graph_service as graph_service
 import os
 import pandas as pd
 import altair as alt
-from src.analysis import metrics
+from src.analysis import centrality_metrics
 from typing import List, Tuple
 
 def draw_graph_api_sidebar():
@@ -224,16 +224,16 @@ def draw_graph_api_sidebar():
                             in_adj[v].append((u, w))
 
                     if metric_choice == "Degree (weighted)":
-                        scores = metrics.degree_centrality(out_adj, in_adj, weighted=True, mode=degree_mode)
-                        expl = "Degree ponderado: soma dos pesos das arestas (modo selecionado)."
+                        scores = centrality_metrics.degree_centrality(out_adj, in_adj, weighted=True, mode=degree_mode)
+                        expl = "Degree: soma dos pesos das arestas (modo selecionado)."
                     elif metric_choice == "Betweenness (weighted)":
-                        scores = metrics.betweenness_centrality_weighted(out_adj)
-                        expl = "Betweenness ponderado: contribuição em caminhos mínimos ponderados."
+                        scores = centrality_metrics.betweenness_centrality_weighted(out_adj)
+                        expl = "Betweenness: contribuição em caminhos mínimos ponderados."
                     elif metric_choice == "PageRank":
-                        scores = metrics.pagerank(out_adj, damping=damping, max_iter=pr_iters)
+                        scores = centrality_metrics.pagerank(out_adj, damping=damping, max_iter=pr_iters)
                         expl = "PageRank: importância distribuída via arestas ponderadas (iteração de potência)."
                     elif metric_choice == "Eigenvector Centrality":
-                        scores = metrics.eigenvector_centrality(out_adj, in_adj, max_iter=int(eig_iters))
+                        scores = centrality_metrics.eigenvector_centrality(out_adj, in_adj, max_iter=int(eig_iters))
                         expl = "Eigenvector: influência considerando a importância dos vizinhos (autovetor)."
                     else:
                         st.error("Métrica desconhecida")
