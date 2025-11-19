@@ -141,3 +141,22 @@ class AdjacencyListGraph(AbstractGraph):
             for v, weight in self.adj_out[u].items():
                 matrix[u][v] = weight
         return matrix
+    
+    def addVertex(self) -> int:
+        """
+        Adiciona um novo vértice ao grafo e retorna seu índice.
+        """
+        # Adiciona um novo dicionário vazio nas listas de adjacência
+        self.adj_out.append({})
+        self.adj_in.append({})
+
+        # Adiciona peso inicial do vértice (zero)
+        self._vertex_weights.append(0)
+
+        # Índice do novo vértice é o último
+        new_index = self._num_vertices
+
+        # Atualiza o contador de vértices
+        self._num_vertices += 1
+
+        return new_index

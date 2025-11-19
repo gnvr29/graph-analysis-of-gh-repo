@@ -138,12 +138,14 @@ def draw_graph_api_sidebar():
                 try:
                     u = name_to_idx[u_name_add]
                     v = name_to_idx[v_name_add]
-                    result = graph_service.add_edge(u, v, weight_add)
-                    if result:
-                        st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada com peso {weight_add}.")
-                    else:
-                        st.info(f"Aresta ({u_name_add}, {v_name_add}) foi ignorada. (Grafo simples não permite laços e arestas duplicadas.)")
-                    st.rerun()
+                    graph_service.add_edge(u, v, weight_add)
+
+                    # Atualiza highlight
+                    st.session_state["last_added_edge"] = (u, v)
+                    st.session_state["last_added_vertex"] = None  # ou destaque algum vértice se quiser
+
+                    st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada com peso {weight_add}.")
+                    st.rerun() 
                 except Exception as e:
                     st.error(f"Erro ao adicionar aresta: {e}")
 
@@ -165,6 +167,30 @@ def draw_graph_api_sidebar():
                         st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao remover aresta: {e}")
+
+        with st.form("form_add_vertex"):
+            st.subheader("Adicionar Vértice")
+            vertex_name_input = st.text_input(
+                "Nome do novo vértice:",
+                value="",  # vazio por padrão
+                placeholder="Digite um nome opcional"
+            )
+            submitted_add_vertex = st.form_submit_button("Adicionar Vértice")
+            
+            if submitted_add_vertex:
+                try:
+                    graph = st.session_state.graph_obj
+                    new_index = graph.addVertex()  # adiciona vértice
+                    # Se o usuário digitou um nome, usa; senão cria padrão
+                    vertex_name = vertex_name_input.strip() or f"Novo_{new_index}"
+                    st.session_state.idx_to_name_map[new_index] = vertex_name
+                    st.session_state.vertex_names_list.append(vertex_name)
+                    
+                    st.success(f"Vértice '{vertex_name}' adicionado com sucesso! (Índice: {new_index})")
+                    st.rerun()  # atualiza sidebar e gráficos
+                except Exception as e:
+                    st.error(f"Erro ao adicionar vértice: {e}")
+
 
     with st.sidebar.expander("Exportar Grafo"):
         export_dir = "exports"

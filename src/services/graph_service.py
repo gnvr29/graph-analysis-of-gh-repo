@@ -4,14 +4,27 @@ from typing import cast
 
 def _get_graph_from_session() -> AbstractGraph:
     """
-    Helper interno para buscar, validar e retornar o objeto de grafo
-    armazenado no session_state.
+    Retorna o grafo atual do session_state.
+    Garante que seja uma instância de AbstractGraph ou de uma subclasse.
     """
-    if 'graph_obj' not in st.session_state or st.session_state.graph_obj is None:
+    graph = st.session_state.get("graph_obj")
+    if graph is None:
         raise ValueError("Grafo não foi gerado ou carregado no state.")
-    graph = cast(AbstractGraph, st.session_state.graph_obj)
+    
+    # Checa se é do tipo AbstractGraph ou qualquer subclasse
     if not isinstance(graph, AbstractGraph):
-        raise TypeError("O objeto em 'graph_obj' não é uma instância de AbstractGraph.")
+        # fallback: checa se o objeto tem os métodos esperados de AbstractGraph
+        required_methods = [
+            "getVertexCount", "getEdgeCount", "hasEdge",
+            "addEdge", "removeEdge", "getAsAdjacencyList", "getAsAdjacencyMatrix"
+        ]
+        missing_methods = [m for m in required_methods if not callable(getattr(graph, m, None))]
+        if missing_methods:
+            raise TypeError(
+                f"O objeto em 'graph_obj' não é compatível com AbstractGraph. "
+                f"Faltam métodos: {missing_methods}. Tipo atual: {type(graph)}"
+            )
+    
     return graph
 
 def get_vertex_count() -> int:
@@ -29,12 +42,28 @@ def has_edge(u: int, v: int) -> bool:
     graph = _get_graph_from_session()
     return graph.hasEdge(u, v)
 
-def add_edge(u: int, v: int, weight: float = 1.0) -> None:
-    """Adiciona uma aresta (u, v) com um peso."""
+def add_edge(u: int, v: int, weight: float = 1.0) -> bool:
+    """
+    Adiciona uma aresta (u, v) com peso no grafo atual.
+    Retorna True se a aresta foi adicionada, False se ignorada (duplicada ou laço).
+    """
     graph = _get_graph_from_session()
+
+    # Verifica se a aresta já existe ou se é um laço (u == v)
+    if u == v or graph.hasEdge(u, v):
+        return False
+
     graph.addEdge(u, v, weight)
-    # Nota: Isso modifica o grafo no state. 
-    # O Streamlit pode precisar ser re-executado para UI refletir.
+
+    # Marca a aresta como recém-adicionada
+    if "new_edges" not in st.session_state:
+        st.session_state.new_edges = set()
+    st.session_state.new_edges.add((u, v))
+
+    # Atualiza o session_state com o mesmo objeto
+    st.session_state.graph_obj = graph
+    st.session_state.last_added_edge = (u, v)  # Para destaque imediato
+    return True
 
 def remove_edge(u: int, v: int) -> None:
     """Remove a aresta (u, v)."""

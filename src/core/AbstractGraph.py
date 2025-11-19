@@ -146,3 +146,5 @@ class AbstractGraph(ABC):
         """Adiciona um novo vértice ao grafo e retorna o índice criado."""
 
         pass
+
+    

@@ -12,7 +12,10 @@ except ImportError as e:
     st.stop()
 
 
-def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list):
+def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list, highlight_vertex=None, highlight_edges=None):
+
+    if highlight_edges is None:
+        highlight_edges = set()
     """
     Desenha o grafo usando a API Abstrata,
     independente da implementação.
@@ -98,23 +101,60 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list)
     plt.figure(figsize=(16, 12))
     plt.axis("off")
 
-    # Arestas
+# Arestas com destaque opcional
     for u in indices_to_render:
         for v in indices_to_render:
-            if graph.hasEdge(u, v): 
+            if graph.hasEdge(u, v):
+
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
+
+                # Destaque da aresta recém-adicionada
+                if (u, v) in highlight_edges or (v, u) in highlight_edges:
+                    color = "red"
+                    alpha = 0.9
+                    lw = 3
+                    st.write(f"[LOG] Aresta destacada detectada: ({u}, {v})")
+                else:
+                    color = "gray"
+                    alpha = 0.5
+                    lw = 1.5
+
+                dx = x2 - x1
+                dy = y2 - y1
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+
+                head_w = dist * 0.05
+                head_l = dist * 0.08
+
                 plt.arrow(
-                    x1, y1, x2 - x1, y2 - y1,
-                    head_width=10000, head_length=10000,
-                    fc="gray", ec="gray", alpha=0.5, length_includes_head=True
+                    x1, y1, dx, dy,
+                    head_width=head_w,
+                    head_length=head_l,
+                    fc=color,
+                    ec=color,
+                    alpha=alpha,
+                    linewidth=lw,
+                    length_includes_head=True
                 )
 
-    # Nós
+
+# Nós
     for i in indices_to_render:
         x, y = positions[i]
-        plt.scatter(x, y, s=120, color="#5DADE2", edgecolors="black", zorder=3)
+        
+        if highlight_vertex is not None and i == highlight_vertex:
+            node_color = "orange"      # Cor diferente para destaque
+            node_size = 250            # Maior tamanho para destacar
+            edge_color = "red"
+        else:
+            node_color = "#5DADE2"
+            node_size = 120
+            edge_color = "black"
+        
+        plt.scatter(x, y, s=node_size, color=node_color, edgecolors=edge_color, zorder=3)
         plt.text(x, y, idx_to_name[i], fontsize=8, ha="center", va="center", color="black")
+
 
     st.pyplot(plt)
     plt.clf()

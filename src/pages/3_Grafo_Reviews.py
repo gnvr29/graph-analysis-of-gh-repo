@@ -101,10 +101,14 @@ def app():
     if st.session_state.get("graph_obj") is not None:
         graph = st.session_state.graph_obj
         idx_to_name = st.session_state.idx_to_name_map
-        
+
         st.success(f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
+        # --- OPERAÇÕES NO GRAFO (SIDEBAR) ---
+        st.sidebar.header("Operações no Grafo")
+
         # --- LÓGICA DE FILTRO ---
+
         author_activity = []
         for i in range(graph.getVertexCount()):
             out_degree = graph.getVertexOutDegree(i)
@@ -141,7 +145,9 @@ def app():
             if not indices_to_render_internal:
                 st.warning("Nenhum autor corresponde aos filtros selecionados.")
             else:
-                draw_graph(graph, idx_to_name, indices_to_render_internal)
+                highlight_vertex = st.session_state.get("last_added_vertex")
+                draw_graph(graph, idx_to_name, indices_to_render_internal, highlight_vertex=highlight_vertex,highlight_edges=st.session_state.get("new_edges", set()))
+
 
         with tab2:
             st.info("Representação do grafo completo como Lista de Adjacência.")
