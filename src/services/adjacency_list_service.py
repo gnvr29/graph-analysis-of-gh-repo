@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import re
-from src.pages._shared_queries import (WEIGHTS)
+from src.services.shared_queries import (WEIGHTS)
 
 try:
     import svgwrite

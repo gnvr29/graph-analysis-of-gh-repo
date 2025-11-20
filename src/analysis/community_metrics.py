@@ -2,13 +2,6 @@ from collections import deque, defaultdict
 from typing import List, Tuple, Dict
 import math
 
-# Nota: Assumimos que a função betweenness_centrality está acessível. 
-# Se ela estiver em outro módulo (ex: centrality_metrics), você precisará importá-la.
-# Se você tiver que importar algo, seria:
-# from .centrality_metrics import betweenness_centrality 
-# Mas para manter o arquivo autocontido e seguir a restrição de "do zero", 
-# usaremos a implementação interna do Brandes dentro do G-N, como no código anterior.
-
 def _get_undirected_adj(out_adj: List[List[Tuple[int, float]]]) -> List[List[Tuple[int, float]]]:
     """Cria uma lista de adjacência não-direcionada/simétrica a partir da dirigida."""
     n = len(out_adj)

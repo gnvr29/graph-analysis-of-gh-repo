@@ -268,3 +268,11 @@ def draw_graph(idx_to_name: dict, indices_to_render: list):
 
     st.pyplot(plt)
     plt.clf()
+
+def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
+    """Constrói um grafo usando a classe de implementação fornecida."""
+    print(f"Construindo grafo com implementação: {impl_class.__name__}")
+    graph = impl_class(vertex_count)
+    for u_idx, v_idx, weight in edges:
+        graph.addEdge(u_idx, v_idx, weight)
+    return graph
