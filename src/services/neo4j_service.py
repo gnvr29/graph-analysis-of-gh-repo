@@ -142,6 +142,16 @@ class Neo4jService:
             comment_author_login=comment_data.get('author')
             )
 
+        author_login = issue_data.get('author')
+        closed_by_login = issue_data.get('closedBy')
+
+        if closed_by_login and closed_by_login != author_login:
+            tx.run("""
+                MATCH (i:Issue {number: $issue_number})
+                MATCH (c:Author {login: $closed_by_login})
+                MERGE (c)-[:CLOSED]->(i)
+            """, issue_number=issue_data.get('number'), closed_by_login=closed_by_login)
+
     def insert_issue_data(self, issue_data):
         """
         Insere os dados de uma única issue e seus comentários no Neo4j.

@@ -148,7 +148,30 @@ class AdjacencyMatrixGraph(AbstractGraph):
                     neighbors[v] = w
             adj_list.append(neighbors)
         return adj_list
+    
+    def addVertex(self) -> int:
+        """
+        Adiciona um vértice ao grafo, expandindo a matriz de adjacência.
+        Retorna o índice do novo vértice.
+        """
+        new_index = self._num_vertices
 
+        # Aumenta cada linha existente com um 0 novo
+        for row in self.matrix:
+            row.append(0.0)
+
+        # Adiciona uma nova linha completa de zeros
+        new_row = [0.0] * (self._num_vertices + 1)
+        self.matrix.append(new_row)
+
+        # Atualiza pesos de vértices
+        self._vertex_weights.append(0)
+
+        # Atualiza contador total
+        self._num_vertices += 1
+
+        return new_index
+    
     def _on_add_vertex(self, new_index: int) -> None:
         """Hook chamado por AbstractGraph.addVertex para expandir a matriz."""
         old_n = len(self.matrix)
