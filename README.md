@@ -33,7 +33,10 @@ Abaixo estão os principais diagramas que representam a estrutura e funcionament
 
 O diagrama de classes abaixo representa a **estrutura de dados e as relações entre as entidades do sistema**.  
 
-Ele foi desenvolvido para **modelar as informações que serão armazenadas e manipuladas no banco de dados Neo4j**, incluindo classes como `Issue`, `PullRequest`, `User`, `Comment` e `Review` (representadas em vermelho), além dos respectivos estados (`Enum`) (representados em azul).
+Ele foi desenvolvido para **modelar as informações que serão armazenadas no banco de dados Neo4j**, incluindo classes como `Issue`, `PullRequest`, `User`, `Comment` e `Review` (representadas em vermelho), além dos respectivos estados (`Enum`) (representados em azul).
+
+
+> Importante destacar que este diagrama representa apenas as relações iniciais dos dados, exatamente como foram obtidas via raspagem e API do GitHub. Ele não reflete o estado final após as transformações, tratamentos e manipulações realizadas para fins de visualização no Streamlit.
 
 <img src="https://github.com/gnvr29/graph-analysis-of-gh-repo/blob/main/diagramas/Diagrama_de_Classes.jpg"/>
 
