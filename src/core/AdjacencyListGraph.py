@@ -34,8 +34,6 @@ class AdjacencyListGraph(AbstractGraph):
         if not self.hasEdge(u, v):
             self.adj_out[u][v] = weight
             self.adj_in[v][u] = weight
-            self._vertex_weights[u] += weight
-            self._vertex_weights[v] += weight
             self._edge_count += 1
             return True
         else:
@@ -49,8 +47,6 @@ class AdjacencyListGraph(AbstractGraph):
             del self.adj_out[u][v]
             del self.adj_in[v][u]
 
-            self._vertex_weights[u] -= weight_to_subtract 
-            self._vertex_weights[v] -= weight_to_subtract
             self._edge_count -= 1
 
     def getVertexInDegree(self, v: int) -> int:
@@ -160,3 +156,10 @@ class AdjacencyListGraph(AbstractGraph):
         self._num_vertices += 1
 
         return new_index
+
+
+    def _on_add_vertex(self, new_index: int) -> None:
+        """Hook chamado por AbstractGraph.addVertex para expandir estruturas."""
+        # Adiciona novas entradas vazias nas listas de adjacência
+        self.adj_out.append({})
+        self.adj_in.append({})

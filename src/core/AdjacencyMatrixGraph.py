@@ -109,9 +109,11 @@ class AdjacencyMatrixGraph(AbstractGraph):
                 f.write('    <edges>\n')
                 edge_id = 0
                 for u in range(self._num_vertices):
-                    for v, weight in self.adj_out[u].items():
-                        f.write(f'      <edge id="{edge_id}" source="{u}" target="{v}" weight="{weight}" />\n')
-                        edge_id += 1
+                    for v in range(self._num_vertices):
+                        weight = self.matrix[u][v]
+                        if weight != 0.0:
+                            f.write(f'      <edge id="{edge_id}" source="{u}" target="{v}" weight="{weight}" />\n')
+                            edge_id += 1
                 f.write('    </edges>\n')
                 f.write('  </graph>\n')
                 f.write('</gexf>\n')
@@ -169,3 +171,10 @@ class AdjacencyMatrixGraph(AbstractGraph):
         self._num_vertices += 1
 
         return new_index
+    
+    def _on_add_vertex(self, new_index: int) -> None:
+        """Hook chamado por AbstractGraph.addVertex para expandir a matriz."""
+        old_n = len(self.matrix)
+        for row in self.matrix:
+            row.append(0.0)
+        self.matrix.append([0.0] * (old_n + 1))

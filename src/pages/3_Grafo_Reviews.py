@@ -11,7 +11,6 @@ from pages._shared_queries import (WEIGHTS, fetch_authors_and_edges)
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
-from src.services.draw_graph_service import draw_graph          
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
 
