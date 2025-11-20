@@ -57,7 +57,7 @@ def build_issue_closure_graph():
             """
             closure_records = session.run(query)
 
-            # 5. Adicionar as arestas no grafo
+            # Adicionar as arestas no grafo
             edge_count = 0
             for record in closure_records:
                 closer_login = record["closer_login"]
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         print(f"Total de Vértices (Usuários): {closure_graph.getVertexCount()}")
         print(f"Total de Arestas (Fechamentos): {closure_graph.getEdgeCount()}")
         
-        print(f"Grafo está vazio (sem arestas)? {closure_graph.isEmpty()}")
+        print(f"Grafo está vazio (sem arestas)? {closure_graph.isEmptyGraph()}")
         print(f"Grafo é completo? {closure_graph.isCompleteGraph()}")
         print(f"Grafo é (fracamente) conexo? {closure_graph.isConnected()}")
 

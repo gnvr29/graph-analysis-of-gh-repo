@@ -11,12 +11,14 @@ REL_COMMENT_ON = "HAS_COMMENT"
 REL_CREATED = "CREATED"
 REL_PERFORMED_REVIEW = "PERFORMED_REVIEW"
 REL_HAS_REVIEW = "HAS_REVIEW"
+REL_CLOSED = "CLOSED"
 
 WEIGHTS = {
     "COMMENT": 2,
     "ISSUE_COMMENTED": 3,
     "REVIEW": 4,
     "MERGE": 5,
+    "ISSUE_CLOSED": 1,
 }
 
 AUTHORS_QUERY = f"""
@@ -54,6 +56,13 @@ MATCH (src:{LABEL_AUTHOR})-[:{REL_PERFORMED_REVIEW}|REVIEWED|APPROVED]->(r:{LABE
 MATCH (pr:{LABEL_PR})-[:{REL_HAS_REVIEW}|REVIEWS|FOR]->(r)
 MATCH (pr)<-[:{REL_CREATED}|OPENED]-(dst:{LABEL_AUTHOR})
 WHERE src <> dst AND pr.mergedAt IS NOT NULL
+RETURN id(src) AS srcId, id(dst) AS dstId
+"""
+
+ISSUE_CLOSED_BY_OTHER_QUERY = f"""
+MATCH (src:{LABEL_AUTHOR})-[:{REL_CLOSED}]->(i:{LABEL_ISSUE})
+MATCH (i)<-[:{REL_CREATED}]-(dst:{LABEL_AUTHOR})
+WHERE src <> dst
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
@@ -143,6 +152,14 @@ def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled
             src, dst = row["srcId"], row["dstId"]
             if src in id_to_index and dst in id_to_index:
                 edges["MERGE"].append((id_to_index[src], id_to_index[dst]))
+    
+    if "ISSUE_CLOSED" in enabled_interaction_types:
+        # Fechamento de issues por terceiros
+        rows = neo4j_service.query(ISSUE_CLOSED_BY_OTHER_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["ISSUE_CLOSED"].append((id_to_index[src], id_to_index[dst]))
 
     return edges
 
