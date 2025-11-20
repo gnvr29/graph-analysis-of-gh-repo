@@ -19,7 +19,6 @@ from src.services.shared_queries import (WEIGHTS, fetch_authors_and_edges)
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
-from src.services.draw_graph_service import draw_graph
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
 
@@ -142,7 +141,7 @@ def app():
             if not indices_to_render_internal:
                 st.warning("Nenhum autor corresponde aos filtros selecionados.")
             else:
-                draw_graph(graph, idx_to_name, indices_to_render_internal)
+                graph_service.draw_graph(idx_to_name, indices_to_render_internal)
 
         with tab2:
             st.info("Representação do grafo completo como Lista de Adjacência.")

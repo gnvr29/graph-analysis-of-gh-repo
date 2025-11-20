@@ -136,7 +136,7 @@ def app():
                 st.warning("Nenhum autor corresponde aos filtros selecionados.")
             else:
                 highlight_vertex = st.session_state.get("last_added_vertex")
-                draw_graph(graph, idx_to_name, indices_to_render_internal, highlight_vertex=highlight_vertex,highlight_edges=st.session_state.get("new_edges", set()))
+                graph_service.draw_graph(idx_to_name, indices_to_render_internal)
 
 
         with tab2:
