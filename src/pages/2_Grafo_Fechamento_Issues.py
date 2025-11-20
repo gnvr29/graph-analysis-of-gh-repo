@@ -7,19 +7,12 @@ from src.core.AbstractGraph import AbstractGraph
 import src.services.graph_service as graph_service
 
 # Importamos a função compartilhada que agora sabe buscar ISSUE_CLOSED
-from pages._shared_queries import (WEIGHTS, fetch_authors_and_edges)
+from src.services.shared_queries import (WEIGHTS, fetch_authors_and_edges)
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
-
-def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
-    """Constrói um grafo usando a classe de implementação fornecida."""
-    graph = impl_class(vertex_count)
-    for u_idx, v_idx, weight in edges:
-        graph.addEdge(u_idx, v_idx, weight)
-    return graph
 
 def app():
     st.title("Grafo 2: Fechamento de Issues")
@@ -77,7 +70,7 @@ def app():
                 else:
                     impl_class = AdjacencyMatrixGraph
                 
-                graph = build_graph(impl_class, vertex_count, edges)
+                graph = graph_service.build_graph(impl_class, vertex_count, edges)
 
                 # Armazenar no Session State
                 st.session_state.graph_obj = graph
