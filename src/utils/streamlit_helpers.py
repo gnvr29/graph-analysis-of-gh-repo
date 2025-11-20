@@ -50,7 +50,7 @@ def draw_graph_api_sidebar():
     st.sidebar.caption(f"Analisando: {type(st.session_state.graph_obj).__name__}")
 
     # --- Expander 1: Propriedades Gerais ---
-    propriedades_gerais()
+    propriedades_gerais(vertex_names)
 
     # --- Expander 2: Análise de Vértice ---
     analise_vertices(vertex_names,name_to_idx)
@@ -74,10 +74,10 @@ def draw_graph_api_sidebar():
     metricas_comunidade()
 
 
-def propriedades_gerais():
+def propriedades_gerais(vertex_names):
     with st.sidebar.expander("Propriedades Gerais", expanded=True):
         try:
-            st.metric("Vértices", graph_service.get_vertex_count())
+            st.metric("Vértices", len(vertex_names))
             st.metric("Arestas", graph_service.get_edge_count())
             
             col1, col2 = st.columns(2)
