@@ -1,12 +1,21 @@
 import streamlit as st
 import pandas as pd
+import os
+import sys
+
+# ============== CÓDIGO PARA CORRIGIR O PATH ==============
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from src.core.AdjacencyListGraph import AdjacencyListGraph
 from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
 from src.core.AbstractGraph import AbstractGraph
 import src.services.graph_service as graph_service
 
-from _shared_queries import (WEIGHTS, fetch_authors_and_edges)
+from src.pages._shared_queries import (WEIGHTS, fetch_authors_and_edges)
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
