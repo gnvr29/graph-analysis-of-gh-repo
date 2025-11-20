@@ -1,13 +1,64 @@
 from neo4j import GraphDatabase
 
+
 class Neo4jService:
     def __init__(self, uri, user, password):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
-        try: 
-            self.driver.verify_connectivity()
+        """Tenta conectar ao Neo4j.
+
+        Se a verificação do certificado TLS falhar (por exemplo, em redes
+        que realizam inspeção TLS e apresentam certificados assinados por
+        uma CA desconhecida), tentamos automaticamente um fallback trocar
+        o sufixo '+s' por '+ssc' (que aceita certificados auto-assinados
+        / pula verificação da cadeia) e reconectar.
+        """
+        self.driver = None
+        self.uri = uri
+        self.user = user
+        # não logar a senha inteira
+        try:
+            self._connect_with_uri(uri, user, password)
             print("Conectado ao Neo4j.")
         except Exception as e:
+            # Detectar falhas relacionadas a verificação de certificado TLS
+            # A exceção real muitas vezes fica aninhada (ExceptionGroup),
+            # então formatamos o traceback completo e procuramos termos relacionados.
+            import traceback as _tb
+            full = ''.join(_tb.format_exception(e)).lower()
+            is_cert_err = (
+                'certificate' in full and ('self-signed' in full or 'verify' in full or 'certverification' in full)
+            ) or ('ssl' in full and 'certificate' in full)
+
+            if is_cert_err and "+s" in (uri or ""):
+                alt_uri = uri.replace("+s", "+ssc")
+                print(f"Aviso: falha na verificação TLS com uri={uri!r}. Tentando fallback para {alt_uri!r}...")
+                try:
+                    self._connect_with_uri(alt_uri, user, password)
+                    self.uri = alt_uri
+                    print("Conectado ao Neo4j usando fallback (ssl verification relaxed).")
+                    return
+                except Exception:
+                    print("Fallback falhou; re-levantando a exceção original.")
+                    raise
+
+            # não parece ser erro de certificado ou não há fallback possível
             print(f"Erro ao conectar ao Neo4j: {e}")
+            raise
+        except Exception as e:
+            print(f"Erro ao conectar ao Neo4j: {e}")
+            raise
+
+    def _connect_with_uri(self, uri, user, password):
+        # Cria o driver e verifica conectividade; lança exceções se falhar.
+        driver = GraphDatabase.driver(uri, auth=(user, password))
+        try:
+            driver.verify_connectivity()
+            self.driver = driver
+        except Exception:
+            # se houve falha, fechamos o driver criado e re-levantamos
+            try:
+                driver.close()
+            except Exception:
+                pass
             raise
             
     def close(self):

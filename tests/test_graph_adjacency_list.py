@@ -23,7 +23,7 @@
 import sys
 import os
 from collections import defaultdict
-import streamlit as st 
+import streamlit as st
 
 # ============== CÓDIGO PARA CORRIGIR O PATH ==============
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,35 +33,34 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 
-
 # ============== IMPORTS DO PROJETO ==============
 
+from config.settings import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+
 try:
-    from src.core.AdjacencyListGraph import AdjacencyListGraph 
+    from src.core.AdjacencyListGraph import AdjacencyListGraph
 except ImportError:
     try:
-        from src.core.AdjacencyListGraph import AdjacencyListGraph 
+        from src.core.AdjacencyListGraph import AdjacencyListGraph
     except ImportError as e:
         raise ImportError(
             "Não foi possível importar AdjacencyListGraph. "
             "Ajuste o caminho do import conforme a estrutura do seu projeto."
         ) from e
 
-from config.settings import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
 
 Neo4jService = None
 try:
-    from src.services.neo4j_service import Neo4jService 
+    from src.services.neo4j_service import Neo4jService
 except Exception:
     try:
-        from src.services.neo4j_service import Neo4jService 
+        from src.services.neo4j_service import Neo4jService
     except Exception:
         print(
             "Não foi possível importar src.services.neo4j_service. "
             "Tentando usar o driver 'neo4j' diretamente. "
             "Certifique-se de que 'neo4j' está instalado (pip install neo4j)."
         )
-        
 
 
 # ============== CONFIGURAÇÕES DO MODELO DE DADOS ==============
@@ -130,6 +129,7 @@ RETURN id(src) AS srcId, id(dst) AS dstId
 
 # ============== FUNÇÕES AUXILIARES ==============
 
+
 def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
     """
     Busca autores e interações no Neo4j, processando as arestas e pesos em Python.
@@ -155,7 +155,8 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
 
     # Dicionário para acumular pesos das arestas, usando IDs do Neo4j como chaves
     # {(src_neo4j_id, dst_neo4j_id): total_weight}
-    weighted_edges_map: defaultdict[tuple[int, int], float] = defaultdict(float)
+    weighted_edges_map: defaultdict[tuple[int,
+                                          int], float] = defaultdict(float)
 
     # 1. Comentário em issue ou pull request (Peso 2)
     print("Buscando interações de 'Comentário em issue ou pull request' (Peso 2)...")
@@ -166,7 +167,8 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
         # Certifica-se de que os IDs existem no mapeamento de autores
         if src_id in id_to_index and dst_id in id_to_index:
             weighted_edges_map[(src_id, dst_id)] += WEIGHTS["COMMENT"]
-    print(f"  Encontradas {len(comment_on_issue_pr_rows)} interações de comentário.")
+    print(
+        f"  Encontradas {len(comment_on_issue_pr_rows)} interações de comentário.")
 
     # 2. Abertura de issue comentada por outro usuário (Peso 3)
     print("Buscando interações de 'Abertura de issue comentada por outro usuário' (Peso 3)...")
@@ -176,7 +178,8 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
         dst_id = row["dstId"]
         if src_id in id_to_index and dst_id in id_to_index:
             weighted_edges_map[(src_id, dst_id)] += WEIGHTS["ISSUE_COMMENTED"]
-    print(f"  Encontradas {len(issue_commented_rows)} interações de issue comentada.")
+    print(
+        f"  Encontradas {len(issue_commented_rows)} interações de issue comentada.")
 
     # 3. Revisão/aprovação de pull request (Peso 4)
     print("Buscando interações de 'Revisão/aprovação de pull request' (Peso 4)...")
@@ -186,7 +189,8 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
         dst_id = row["dstId"]
         if src_id in id_to_index and dst_id in id_to_index:
             weighted_edges_map[(src_id, dst_id)] += WEIGHTS["REVIEW"]
-    print(f"  Encontradas {len(pr_review_approval_rows)} interações de revisão/aprovação.")
+    print(
+        f"  Encontradas {len(pr_review_approval_rows)} interações de revisão/aprovação.")
 
     # 4. Merge de pull request (Peso 5)
     print("Buscando interações de 'Merge de pull request' (Peso 5)...")
@@ -208,7 +212,8 @@ def fetch_authors_and_edges(neo4j_service) -> tuple[dict[int, str], list[tuple[i
             edges.append((u, v, total_weight))
         # else: print(f"[Debug] Auto-laço detectado/ignorado: {src_neo4j_id}") # Para depuração
 
-    print(f"Total de {len(edges)} arestas ponderadas únicas formadas após agregação.")
+    print(
+        f"Total de {len(edges)} arestas ponderadas únicas formadas após agregação.")
     return idx_to_name, edges
 
 
@@ -216,7 +221,8 @@ def build_graph(vertex_count: int, edges: list[tuple[int, int, float]]) -> "Adja
     """
     Constrói o grafo de lista de adjacência a partir do número de vértices e arestas ponderadas.
     """
-    st.info(f"Construindo grafo com {vertex_count} vértices e {len(edges)} arestas...")
+    st.info(
+        f"Construindo grafo com {vertex_count} vértices e {len(edges)} arestas...")
     graph = AdjacencyListGraph(vertex_count)
     for u, v, w in edges:
         try:
@@ -227,69 +233,267 @@ def build_graph(vertex_count: int, edges: list[tuple[int, int, float]]) -> "Adja
     st.success("Grafo construído com sucesso.")
     return graph
 
+def truncate_name(name: str, max_len: int = 12) -> str:
+    return name if len(name) <= max_len else name[:max_len - 3] + "..."
 
 def display_graph_textual_streamlit(graph: "AdjacencyListGraph", idx_to_name: dict[int, str]) -> None:
     """
-    Exibe a lista de adjacência do grafo em formato textual no Streamlit.
+    Exibe a lista de adjacência do grafo como um SVG no Streamlit,
+    usando a biblioteca svgwrite para gerar o SVG (sem alterar a lógica de coleta/tratamento de dados).
     """
+    import streamlit as st
+    import streamlit.components.v1 as components
+    import svgwrite
+    # import svgwrite.container # <--- Esta importação só é necessária se você usar 'Title' para tooltips
 
     n = len(idx_to_name)
     if n == 0:
         st.warning("Nenhum autor para exibir.")
         return
 
-    adj_list_str = []
+    # ======= Parâmetros visuais (ajuste fino conforme desejar) =======
+    NODE_BOX_WIDTH = 120
+    NODE_BOX_HEIGHT = 36
+    TEXT_SIZE = 13
+    PADDING_TEXT_X = NODE_BOX_WIDTH / 2
+    PADDING_TEXT_Y = NODE_BOX_HEIGHT / 2 + 4
+    ARROW_LENGTH = 40
+    VERTICAL_NODE_SPACING = 24
+    HORIZONTAL_ADJ_NODE_SPACING = 16
+    MARGIN_LEFT = 40
+    MARGIN_TOP = 36
+    ARROW_HEAD_SIZE = 8
+
+    STROKE_COLOR = "#00BFFF"
+    NODE_FILL = "#E6E6E6"
+    FONT_FAMILY = "Inter, Segoe UI, Roboto, Arial, sans-serif"
+
+    # Comprimento máximo da lista de adjacência (para dimensionar o canvas interno)
+    max_adj_list_len = 0
     for u in range(n):
-        if u < len(graph.adj_out):
-            neighbors = graph.adj_out[u]
-            pares = []
-            sorted_neighbors = sorted(neighbors.items(), key=lambda item: item[1], reverse=True)
-            for v, w in sorted_neighbors:
-                nome_v = idx_to_name.get(v, f"Nó desconhecido ({v})")
-                pares.append(f"{nome_v} (peso: {w})")
-            
-            node_name = idx_to_name.get(u, f"Nó desconhecido ({u})")
-            if pares:
-                adj_list_str.append(f"**{node_name}** aponta para: " + ", ".join(pares))
-            else:
-                adj_list_str.append(f"**{node_name}**: Não possui saídas.")
-        else:
-            adj_list_str.append(f"**Nó desconhecido ({u})**: (Índice fora do limite de adj_out)")
+        if u < len(getattr(graph, "adj_out", [])):
+            max_adj_list_len = max(max_adj_list_len, len(graph.adj_out[u]))
 
-    st.subheader("Representação Textual da Lista de Adjacência")
-    st.info("Cada linha representa um autor (nó) e seus vizinhos de saída, com os pesos das arestas.")
+    # Dimensões "intrínsecas" (tamanho lógico do conteúdo)
+    total_width = (
+        MARGIN_LEFT
+        + NODE_BOX_WIDTH
+        + (ARROW_LENGTH if max_adj_list_len > 0 else 0)
+        + (max_adj_list_len * NODE_BOX_WIDTH)
+        + (max(0, max_adj_list_len - 1) * HORIZONTAL_ADJ_NODE_SPACING)
+        + MARGIN_LEFT
+    )
 
-      # Legenda para os pesos
+    total_height = (
+        MARGIN_TOP
+        + (n * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING))
+        - (VERTICAL_NODE_SPACING if n > 0 else 0)
+        + MARGIN_TOP
+    )
+
+    # ======= Criação do SVG =======
+    dwg = svgwrite.Drawing(size=("100%", "100%"))
+    dwg.viewbox(0, 0, total_width, total_height)
+    dwg.attribs["preserveAspectRatio"] = "xMinYMin meet"
+    dwg.add(dwg.style(f"text {{ font-family: '{FONT_FAMILY}'; }}"))
+
+    # CSS para o efeito de hover (tooltip)
+    dwg.defs.add(dwg.style(f"""
+        text {{ font-family: '{FONT_FAMILY}'; }}
+        .fullname {{
+            visibility: hidden;
+            fill: #FFF; 
+            background-color: #333; 
+            padding: 5px;
+            border-radius: 3px;
+            pointer-events: none; 
+        }}
+        g:hover .fullname {{
+            visibility: visible;
+        }}
+        g:hover rect {{
+            stroke: #FFD700;
+            stroke-width: 2px;
+        }}
+    """))
+
+    # Linhas horizontais claras (opcional) - estas já estavam funcionando
+    for u in range(n):
+        y_mid = MARGIN_TOP + u * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING) + NODE_BOX_HEIGHT / 2
+        dwg.add(dwg.line(
+            start=(MARGIN_LEFT - 10, y_mid),
+            end=(total_width - (MARGIN_LEFT - 10), y_mid),
+            stroke="#1a1a1a",
+            stroke_width=1
+        ))
+
+    # Nó por nó
+    for u in range(n):
+        u_box_x = MARGIN_LEFT
+        u_box_y = MARGIN_TOP + u * (NODE_BOX_HEIGHT + VERTICAL_NODE_SPACING)
+        author_name = idx_to_name.get(u, f"Nó {u}")
+        author_display = truncate_name(author_name)
+
+        # Caixa do nó de origem (com nome truncado e fullname escondido que aparece no hover)
+        g_src = dwg.g(id=f"node-{u}")
+        g_src.add(dwg.rect(
+            insert=(u_box_x, u_box_y),
+            size=(NODE_BOX_WIDTH, NODE_BOX_HEIGHT),
+            fill=NODE_FILL,
+            stroke=STROKE_COLOR,
+            rx=6, ry=6
+        ))
+        
+        author_display = truncate_name(author_name, max_len=14)
+        
+        # Texto visível (truncado)
+        t_src = dwg.text(
+            author_display,
+            insert=(u_box_x + PADDING_TEXT_X, u_box_y + PADDING_TEXT_Y),
+            text_anchor="middle",
+            font_size=TEXT_SIZE,
+            fill="#111"
+        )
+        g_src.add(t_src)
+        
+        # Texto "completo" que aparece no hover (posicionado abaixo, ou você pode ajustar)
+        t_full_src = dwg.text(
+            author_name,
+            insert=(u_box_x + PADDING_TEXT_X, u_box_y + NODE_BOX_HEIGHT + 12),  # aparece logo abaixo do nó
+            text_anchor="middle",
+            font_size=TEXT_SIZE - 2,
+        )
+        t_full_src.attribs["class"] = "fullname"
+        g_src.add(t_full_src)
+        
+        dwg.add(g_src)
+                
+        # Recuperar vizinhos (ordenados por peso decrescente)
+        neighbors = []
+        adj_out = getattr(graph, "adj_out", {})
+        if isinstance(adj_out, dict):
+            neighbors = adj_out.get(u, {}).items()
+        elif isinstance(adj_out, list) and u < len(adj_out):
+            neighbors = adj_out[u].items()
+        neighbors = sorted(neighbors, key=lambda it: it[1], reverse=True)
+
+        if neighbors:
+            current_adj_x = u_box_x + NODE_BOX_WIDTH + ARROW_LENGTH
+            current_adj_y = u_box_y
+
+            # Desenha conexão para cada vizinho
+            for v, w in neighbors:
+                adj_name = idx_to_name.get(v, f"Nó {v}")
+                adj_display = truncate_name(adj_name)
+
+                # Linha de conexão com seta
+                line_y = u_box_y + NODE_BOX_HEIGHT / 2
+                arrow_tip_x = current_adj_x
+                line_start_x = u_box_x + NODE_BOX_WIDTH
+                line_end_x = current_adj_x  
+
+                # Linha de conexão
+                dwg.add(dwg.line(
+                    start=(line_start_x, line_y),
+                    end=(line_end_x, line_y),
+                    stroke=STROKE_COLOR,
+                    stroke_width=2
+                ))
+
+                # Seta
+                dwg.add(dwg.polygon(
+                    points=[
+                        (arrow_tip_x, line_y), # A ponta da seta está agora exatamente na borda do nó de destino
+                        (arrow_tip_x - ARROW_HEAD_SIZE, line_y - ARROW_HEAD_SIZE / 2),
+                        (arrow_tip_x - ARROW_HEAD_SIZE, line_y + ARROW_HEAD_SIZE / 2),
+                    ],
+                    fill=STROKE_COLOR
+                ))
+
+                # Exibir peso sobre a linha
+                dwg.add(dwg.text(
+                    str(w),
+                    insert=((line_start_x + arrow_tip_x) / 2, line_y - 8),
+                    text_anchor="middle",
+                    font_size=TEXT_SIZE - 2,
+                    fill="#00BFFF"
+                ))
+
+                # Caixa do vizinho (com nome truncado)
+                g_adj = dwg.g(id=f"node-{u}-to-{v}")
+                g_adj.add(dwg.rect(
+                    insert=(current_adj_x, current_adj_y),
+                    size=(NODE_BOX_WIDTH, NODE_BOX_HEIGHT),
+                    fill=NODE_FILL,
+                    stroke=STROKE_COLOR,
+                    rx=4, ry=4
+                ))
+
+                # Texto visível truncado
+                t_adj = dwg.text(
+                    adj_display,
+                    insert=(current_adj_x + PADDING_TEXT_X, current_adj_y + PADDING_TEXT_Y),
+                    text_anchor="middle",
+                    font_size=TEXT_SIZE,
+                    fill="#111"
+                )
+                g_adj.add(t_adj)
+
+                # Texto completo que aparece ao passar o mouse (tooltip via CSS)
+                t_full_adj = dwg.text(
+                    f"{adj_name} (peso: {w})",
+                    insert=(current_adj_x + PADDING_TEXT_X, current_adj_y + NODE_BOX_HEIGHT + 12),
+                    text_anchor="middle",
+                    font_size=TEXT_SIZE - 2
+                )
+                t_full_adj.attribs["class"] = "fullname"
+                g_adj.add(t_full_adj)
+
+                dwg.add(g_adj)  
+
+                current_adj_x += NODE_BOX_WIDTH + ARROW_LENGTH
+
+    # SVG como string (sem width/height em px no elemento <svg>)
+    svg_string = dwg.tostring()
+
+    # 2) Wrapper para FORÇAR overflow (scroll) sem estourar o atributo width do SVG
+    #    - Outer: tamanho visível fixo + overflow auto (scrollbars)
+    #    - Inner: canvas do tamanho lógico (W x H) — o <svg> ocupa 100% deste canvas
+    visible_w = "100%"  # largura visível = largura do container Streamlit
+    visible_h_px = 600  # ajuste conforme preferir
+    html_container = f"""
+    <div style="width:{visible_w}; height:{visible_h_px}px; overflow:auto; border:1px solid #444; background:#0d0d1a;">
+      <div style="width:{int(total_width)}px; height:{int(total_height)}px;">
+        {svg_string}
+      </div>
+    </div>
+    """
+
+    # Renderiza no Streamlit (scrolling=True dá fallback de scroll no iframe)
+    components.html(html_container, height=visible_h_px + 24, scrolling=True)
+
+    # Legenda (mantida)
     st.markdown("---")
-    st.subheader("Legenda dos Pesos das Interações:")
-    st.write(
-        f"- **Comentário em Issue/PR**: {WEIGHTS['COMMENT']} pontos (quando src comenta em Issue/PR criada por dst)"
-    )
-    st.write(
-        f"- **Abertura de Issue Comentada**: {WEIGHTS['ISSUE_COMMENTED']} pontos (quando src comenta em Issue criada por dst)"
-    )
-    st.write(
-        f"- **Revisão/Aprovação de PR**: {WEIGHTS['REVIEW']} pontos (quando src revisa/aprova PR criada por dst)"
-    )
-    st.write(
-        f"- **Merge de PR**: {WEIGHTS['MERGE']} pontos (quando src revisa/aprova PR *mesclada* criada por dst)"
-    )
-    st.info("O peso exibido em cada aresta é o valor agregado total das interações entre os autores.")
+    st.subheader("Legenda dos Pesos das Interações")
+    
+    # Adicionando uma verificação para a variável WEIGHTS
+    # Ela precisa ser definida antes de ser usada aqui.
+    # Exemplo de como ela deveria ser definida (ou vir de 'graph'):
+    WEIGHTS = getattr(graph, 'WEIGHTS', {'COMMENT': 1, 'ISSUE_COMMENTED': 2, 'REVIEW': 3, 'MERGE': 4}) 
+    
+    st.write(f"- Comentário em Issue/PR: {WEIGHTS.get('COMMENT', 'N/A')}")
+    st.write(f"- Abertura de Issue comentada: {WEIGHTS.get('ISSUE_COMMENTED', 'N/A')}")
+    st.write(f"- Revisão/Aprovação de PR: {WEIGHTS.get('REVIEW', 'N/A')}")
+    st.write(f"- Merge de PR: {WEIGHTS.get('MERGE', 'N/A')}")
+    st.info("Passe o mouse sobre as caixas para ver o nome completo e o peso agregado.")
 
-  
-    # Opção para baixar a lista de adjacência em TXT
-    txt_content = "\n".join(adj_list_str)
+    # Download do SVG puro (sem wrappers)
     st.download_button(
-        label="Baixar Lista de Adjacência (TXT)",
-        data=txt_content.encode("utf-8"),
-        file_name="adjacency_list.txt",
-        mime="text/plain"
+        "Baixar visualização (SVG)",
+        data=svg_string.encode("utf-8"),
+        file_name="lista_adjacencia.svg",
+        mime="image/svg+xml"
     )
-
-    # Exibe a lista de adjacência em um st.dataframe ou st.text_area
-    st.markdown("\n".join(adj_list_str))
-
-
 
 
 def app():
@@ -307,7 +511,8 @@ def app():
 
     neo4j_service = Neo4jService(NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD)
     if neo4j_service is None:
-        st.error("Serviço Neo4j não inicializado. Verifique as configurações e instalações.")
+        st.error(
+            "Serviço Neo4j não inicializado. Verifique as configurações e instalações.")
         return
 
     st.sidebar.header("Status da Conexão")
@@ -320,11 +525,13 @@ def app():
         return
 
     if st.button("Gerar e Exibir Grafo"):
-        st.spinner("Processando dados e construindo grafo... Isso pode levar um tempo.")
+        st.spinner(
+            "Processando dados e construindo grafo... Isso pode levar um tempo.")
         try:
             idx_to_name, edges = fetch_authors_and_edges(neo4j_service)
             if not idx_to_name:
-                st.warning("Nenhum nó (:Author) encontrado no Neo4j. Não é possível construir o grafo.")
+                st.warning(
+                    "Nenhum nó (:Author) encontrado no Neo4j. Não é possível construir o grafo.")
                 return
 
             vertex_count = len(idx_to_name)
@@ -345,4 +552,3 @@ def app():
 
 if __name__ == "__main__":
     app()
-    
