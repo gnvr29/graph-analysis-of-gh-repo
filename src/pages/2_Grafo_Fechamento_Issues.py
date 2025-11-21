@@ -6,9 +6,7 @@ from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
 from src.core.AbstractGraph import AbstractGraph 
 import src.services.graph_service as graph_service
 
-# Importamos a função compartilhada que agora sabe buscar ISSUE_CLOSED
 from pages._shared_queries import (WEIGHTS, fetch_authors_and_edges)
-
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
 from src.utils.neo4j_connector import get_neo4j_service
@@ -63,7 +61,6 @@ def app():
     if st.button("Gerar e Analisar Grafo"):
         with st.spinner("Buscando dados de fechamento de issues..."):
             try:
-                # AQUI ESTÁ A MÁGICA: Solicitamos apenas o tipo ISSUE_CLOSED
                 idx_to_name, edges = fetch_authors_and_edges(neo4j_service, enabled_interaction_types={"ISSUE_CLOSED"})
                 
                 if not idx_to_name:
@@ -79,7 +76,6 @@ def app():
                 
                 graph = build_graph(impl_class, vertex_count, edges)
 
-                # Armazenar no Session State
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
                 st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
@@ -97,7 +93,6 @@ def app():
         
         st.success(f"Grafo gerado com sucesso: {graph.getVertexCount()} vértices e {graph.getEdgeCount()} arestas.")
 
-        # Lógica de Filtro para exibição
         indices_to_render = list(range(graph.getVertexCount()))
         
         if filter_with_edges:
@@ -108,7 +103,6 @@ def app():
             ]
         
         if limit > 0:
-            # Ordena por atividade (soma de in + out degree) para pegar os mais relevantes
             indices_to_render.sort(key=lambda i: graph.getVertexOutDegree(i) + graph.getVertexInDegree(i), reverse=True)
             indices_to_render = indices_to_render[:limit]
 
@@ -140,7 +134,6 @@ def app():
             svg = df_to_svg(df)
             st.download_button("Baixar matriz (SVG)", data=svg.encode("utf-8"), file_name="matriz_fechamento.svg", mime="image/svg+xml")
 
-    # Ferramentas laterais (Métricas, etc)
     draw_graph_api_sidebar()
 
 if __name__ == "__main__":
