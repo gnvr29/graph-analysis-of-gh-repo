@@ -12,11 +12,14 @@ REL_CREATED = "CREATED"
 REL_PERFORMED_REVIEW = "PERFORMED_REVIEW"
 REL_HAS_REVIEW = "HAS_REVIEW"
 REL_CLOSED = "CLOSED"
+REL_MERGED = "MERGED" 
+REL_APPROVED = "APPROVED" 
 
 WEIGHTS = {
     "COMMENT": 2,
     "ISSUE_COMMENTED": 3,
     "REVIEW": 4,
+    "APPROVED": 4,
     "MERGE": 5,
     "ISSUE_CLOSED": 1,
 }
@@ -24,7 +27,12 @@ WEIGHTS = {
 AUTHORS_QUERY = f"""
 MATCH (a:{LABEL_AUTHOR})
 RETURN id(a) AS id, coalesce(a.login, toString(id(a))) AS name
-ORDER BY name
+"""
+
+AUTHORS_WITH_ACTIVITY_QUERY = f"""
+MATCH (a:{LABEL_AUTHOR})
+WHERE (a)--()
+RETURN id(a) AS id, coalesce(a.login, toString(id(a))) AS name
 """
 
 COMMENT_ON_ISSUE_PR_QUERY = f"""
@@ -67,46 +75,119 @@ RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
 
-def fetch_authors_and_edges(neo4j_service, enabled_interaction_types: Set[str]) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
+def fetch_authors_and_edges(neo4j_service, enabled_interaction_types: Set[str], limit: int = 0, only_active_authors: bool = False) -> tuple[dict[int, str], list[tuple[int, int, float]]]:
     """
-    Função principal para buscar autores e arestas, com configuração dos tipos de interação.
+    Função principal para buscar autores e arestas, aplicando a filtragem e o limite
+    somente aos autores que participaram dos tipos de interação habilitados.
     """
     print("Buscando todos os autores...")
-    id_to_index, idx_to_name = fetch_authors(neo4j_service)
-    if not id_to_index:
+    # 1. Busca todos os autores (ativos ou não, sem limite no Cypher)
+    id_to_index_full, idx_to_name_full = fetch_authors(neo4j_service, limit, only_active_authors=only_active_authors)
+    
+    if not id_to_index_full:
         print("Nenhum autor encontrado no Neo4j.")
         return {}, []
-    print(f"Encontrados {len(idx_to_name)} autores.") 
+    
+    print(f"Encontrados {len(idx_to_name_full)} autores no total.") 
 
-    # Busca as arestas, considerando APENAS os tipos de interação habilitados
-    edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index, enabled_interaction_types)
+    # 2. Busca as arestas, considerando APENAS os tipos de interação habilitados
+    # Usamos o id_to_index_full para mapear os IDs Neo4j para os índices temporários
+    edges_by_relation = fetch_edges_by_relation(neo4j_service, id_to_index_full, enabled_interaction_types)
 
     filtered_weights = {k: v for k, v in WEIGHTS.items() if k in enabled_interaction_types}
 
-    # Constrói as arestas integradas com os pesos filtrados
+    # 3. Constrói as arestas integradas com os pesos filtrados
     edges = build_integrated_edges(edges_by_relation, filtered_weights)
 
+    if not edges:
+        print(f"Nenhuma aresta formada com os tipos de interação habilitados: {', '.join(enabled_interaction_types)}")
+        return {}, []
+    
+    # -----------------------------------------------------------
+    # 4. PASSO FINAL: FILTRAGEM E APLICAÇÃO DO LIMIT NO PYTHON
+    # -----------------------------------------------------------
+    
+    if only_active_authors or limit > 0:
+        
+        # Encontra todos os índices (u ou v) que aparecem nas arestas habilitadas
+        active_indices = set()
+        for u, v, _ in edges:
+            active_indices.add(u)
+            active_indices.add(v)
+
+        idx_to_name_filtered = {}
+        old_to_new_index = {}
+        new_index = 0
+        
+        # Cria a lista final de autores, aplicando o LIMIT e o filtro de atividade
+        for old_index, name in idx_to_name_full.items():
+            if old_index in active_indices:
+                
+                # Aplica o LIMIT aqui: se o novo índice já atingiu o limite, para.
+                if limit > 0 and new_index >= limit:
+                    break
+                
+                idx_to_name_filtered[new_index] = name
+                old_to_new_index[old_index] = new_index
+                new_index += 1
+
+        # Atualiza as arestas para usar os novos índices (re-indexação)
+        edges_final = []
+        for u_old, v_old, weight in edges:
+            # Só inclui a aresta se ambos os nós foram mantidos na lista filtrada (após filtro e limite)
+            if u_old in old_to_new_index and v_old in old_to_new_index:
+                u_new = old_to_new_index[u_old]
+                v_new = old_to_new_index[v_old]
+                edges_final.append((u_new, v_new, weight))
+            
+        idx_to_name = idx_to_name_filtered
+        edges = edges_final
+        
+        print(f"Total de {len(idx_to_name)} autores filtrados (após filtro de interações e limite).")
+    
+    else:
+        # Se não há filtro de ativos nem limite, usa os dados completos
+        idx_to_name = idx_to_name_full
+        
+    # -----------------------------------------------------------
+    
     if enabled_interaction_types:
         print(f"Tipos de interações incluídos: {', '.join(enabled_interaction_types)}")
-    else:
-        print("Nenhum tipo de interação selecionado.")
-
+    
     print(f"Total de {len(edges)} arestas ponderadas únicas formadas após agregação.")
+    
     return idx_to_name, edges
 
 
-def fetch_authors(neo4j_service) -> Tuple[Dict[int, int], Dict[int, str]]:
-    """Retorna (id_to_index, idx_to_name) a partir dos autores no Neo4j."""
-    authors_rows = neo4j_service.query(AUTHORS_QUERY)
+def fetch_authors(neo4j_service, limit, only_active_authors: bool = False) -> Tuple[Dict[int, int], Dict[int, str]]:
+    """Retorna (id_to_index, idx_to_name) a partir dos autores no Neo4j, buscando todos primeiro."""
+
+    if only_active_authors:
+        cypher_query = AUTHORS_WITH_ACTIVITY_QUERY
+        print("Filtrando para buscar APENAS autores ATIVOS.")
+    else:
+        cypher_query = AUTHORS_QUERY
+        print("Buscando todos os autores (ativos e inativos).")
+
+    # A ordenação é mantida para garantir consistência, mas o LIMIT é aplicado depois no Python.
+    cypher_query += " ORDER BY name"
+    print("Buscando todos os autores do Neo4j (sem limite inicial)...")
+
+    authors_rows = neo4j_service.query(cypher_query)
     if not authors_rows:
         return {}, {}
+    
     id_to_index: Dict[int, int] = {}
     idx_to_name: Dict[int, str] = {}
+    
     for idx, row in enumerate(authors_rows):
         neo4j_id = row["id"]
         name = row.get("name") or str(neo4j_id)
+        
+        # Mapeamento do Neo4j ID para o índice sequencial
         id_to_index[neo4j_id] = idx
         idx_to_name[idx] = name
+        
     return id_to_index, idx_to_name
 
 

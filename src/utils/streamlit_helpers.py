@@ -77,7 +77,7 @@ def draw_graph_api_sidebar():
 def propriedades_gerais(vertex_names):
     with st.sidebar.expander("Propriedades Gerais", expanded=True):
         try:
-            st.metric("Vértices", len(vertex_names))
+            st.metric("Vértices", graph_service.get_vertex_count())
             st.metric("Arestas", graph_service.get_edge_count())
             
             col1, col2 = st.columns(2)

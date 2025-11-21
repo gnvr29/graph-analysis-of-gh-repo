@@ -66,8 +66,9 @@ def app():
     if st.button("Gerar e Analisar Grafo"):
         with st.spinner("Buscando dados e construindo grafo..."):
             try:
+                current_limit = st.session_state.get(f"{PAGE_ID}_current_author_limit", 0)
                 idx_to_name, edges = fetch_authors_and_edges(
-                    neo4j_service, enabled_interaction_types={"COMMENT"})
+                    neo4j_service, enabled_interaction_types={"COMMENT"}, limit=current_limit, only_active_authors=filter_with_edges)
                 if not idx_to_name:
                     st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
                     st.session_state.graph_obj = None
@@ -109,7 +110,7 @@ def app():
             f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
         # --- LÓGICA DE FILTRO ---
-        visualization_filters(graph=graph, filter_with_edges=filter_with_edges, limit=limit)
+        visualization_filters(graph=graph)
 
         indices_to_render_internal = st.session_state.get("indices_to_render_internal")
         
