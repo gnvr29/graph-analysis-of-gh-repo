@@ -172,7 +172,7 @@ class Neo4jService:
         Transação interna para criar/atualizar o PR, seu autor,
         comentários, revisões e merges.
         """
-        pr_number = pr_data.get('number')
+        pr_number = int(pr_data.get('number'))
         author_login = pr_data.get('author')
 
         # 1. Criar/Atualizar o nó do Author do PR (se não for None)
@@ -199,7 +199,7 @@ class Neo4jService:
                 pr.mergedAt = $mergedAt,
                 pr.status = $status
             """, 
-            id=pr_data.get('id'),
+            id=int(pr_data.get('id')), 
             pr_number=pr_number,
             title=pr_data.get('title'),
             body=pr_data.get('body'),
@@ -233,10 +233,27 @@ class Neo4jService:
                 merged_by_login=merged_by_login
             )
 
+        # 5. Ligar o PR a quem o APROVOU (se houver)
+        approvers = pr_data.get('approvers', [])
+        if approvers:
+            tx.run("""
+                MATCH (pr:PullRequest {number: $pr_number})
+                UNWIND $approvers_list AS approver_login
+                MERGE (a:Author {login: approver_login})
+                MERGE (a)-[:APPROVED]->(pr)
+                """,
+                pr_number=pr_number,
+                approvers_list=approvers
+            )
+
+
+        # 6. Loop: Comentários de Issue 
         for comment_data in pr_data.get('comments', []):
             comment_author_login = comment_data.get('user', {}).get('login')
             if not comment_author_login:
                 continue
+            
+            comment_id = int(comment_data.get('id')) # CONVERSÃO
             
             tx.run("MERGE (ca:Author {login: $login})", login=comment_author_login)
             tx.run("""
@@ -251,16 +268,18 @@ class Neo4jService:
                 """,
                 pr_number=pr_number,
                 comment_author_login=comment_author_login,
-                comment_id=comment_data.get('id'),
+                comment_id=comment_id,
                 body=comment_data.get('body'),
                 createdAt=comment_data.get('created_at')
             )
 
-        # 6. Loop: Comentários de Revisão (Linhas de Código)
+        # 7. Loop: Comentários de Revisão (Linhas de Código)
         for review_comment_data in pr_data.get('review_comments', []):
             comment_author_login = review_comment_data.get('user', {}).get('login')
             if not comment_author_login:
                 continue
+            
+            review_comment_id = int(review_comment_data.get('id')) 
             
             tx.run("MERGE (ca:Author {login: $login})", login=comment_author_login)
             tx.run("""
@@ -275,17 +294,19 @@ class Neo4jService:
                 """,
                 pr_number=pr_number,
                 comment_author_login=comment_author_login,
-                comment_id=review_comment_data.get('id'),
+                comment_id=review_comment_id,
                 body=review_comment_data.get('body'),
                 createdAt=review_comment_data.get('created_at')
             )
         
-        # 7. Loop: Eventos de Revisão (Aprovações, etc.)
+        # 8. Loop: Eventos de Revisão (Aprovações, etc.)
         for review_data in pr_data.get('reviews', []):
             review_author_login = review_data.get('user', {}).get('login')
             if not review_author_login:
                 continue
                 
+            review_id = int(review_data.get('id')) 
+            
             tx.run("MERGE (ra:Author {login: $login})", login=review_author_login)
             tx.run("""
                 MATCH (pr:PullRequest {number: $pr_number})
@@ -305,7 +326,7 @@ class Neo4jService:
                 """,
                 pr_number=pr_number,
                 review_author_login=review_author_login,
-                review_id=review_data.get('id'),
+                review_id=review_id,
                 state=review_data.get('state'), 
                 body=review_data.get('body'),
                 submittedAt=review_data.get('submitted_at')
