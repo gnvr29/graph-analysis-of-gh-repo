@@ -4,7 +4,7 @@ import plotly.express as px
 
 from src.utils.neo4j_connector import get_neo4j_service
 from src.core.AdjacencyListGraph import AdjacencyListGraph
-from pages._shared_queries import fetch_authors_and_edges, WEIGHTS
+from src.services.shared_queries import fetch_authors_and_edges, WEIGHTS
 
 from src.analysis.structure_metrics import (
     calculate_density,
