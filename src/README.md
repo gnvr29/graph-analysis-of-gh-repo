@@ -97,7 +97,7 @@ Formato de entrada para as métricas: listas de adjacência `out_adj` e `in_adj`
 & C:/Python313/python.exe -m pip install -r requirements.txt
 & C:/Python313/python.exe -m streamlit run "src/app.py"
 ```
-
+alo testando PR
 - Rodar o runner de métricas (terminal):
 ```powershell
 & C:/Python313/python.exe "src/analysis/run_metrics.py"

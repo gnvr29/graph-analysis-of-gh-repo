@@ -1,3 +1,8 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from src.collectors.github_collector import GithubCollector
 from src.services.neo4j_service import Neo4jService
 from config.settings import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
