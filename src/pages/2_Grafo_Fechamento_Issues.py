@@ -6,21 +6,17 @@ from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
 from src.core.AbstractGraph import AbstractGraph 
 import src.services.graph_service as graph_service
 
-from pages._shared_queries import (WEIGHTS, fetch_authors_and_edges)
+# Importamos a função compartilhada que agora sabe buscar ISSUE_CLOSED
+from src.services.shared_queries import (WEIGHTS, fetch_authors_and_edges)
+
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
-
-def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
-    """Constrói um grafo usando a classe de implementação fornecida."""
-    graph = impl_class(vertex_count)
-    for u_idx, v_idx, weight in edges:
-        graph.addEdge(u_idx, v_idx, weight)
-    return graph
+from src.utils.streamlit_filters import visualization_filters
 
 def app():
-    st.title("Grafo 2: Fechamento de Issues")
+    st.title("Grafo: Fechamento de Issues")
     st.markdown("""
     **Descrição:** Este grafo representa a relação onde um usuário fecha a issue criada por outro.
     
@@ -74,7 +70,7 @@ def app():
                 else:
                     impl_class = AdjacencyMatrixGraph
                 
-                graph = build_graph(impl_class, vertex_count, edges)
+                graph = graph_service.build_graph(impl_class, vertex_count, edges)
 
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
@@ -93,39 +89,31 @@ def app():
         
         st.success(f"Grafo gerado com sucesso: {graph.getVertexCount()} vértices e {graph.getEdgeCount()} arestas.")
 
-        indices_to_render = list(range(graph.getVertexCount()))
-        
-        if filter_with_edges:
-            # Filtra quem tem grau de saída (fechou issues) ou entrada (teve issues fechadas)
-            indices_to_render = [
-                i for i in indices_to_render 
-                if graph.getVertexOutDegree(i) > 0 or graph.getVertexInDegree(i) > 0
-            ]
-        
-        if limit > 0:
-            indices_to_render.sort(key=lambda i: graph.getVertexOutDegree(i) + graph.getVertexInDegree(i), reverse=True)
-            indices_to_render = indices_to_render[:limit]
+        visualization_filters(graph=graph, filter_with_edges=filter_with_edges, limit=limit)
 
-        st.divider()
+        indices_to_render_internal = st.session_state.get("indices_to_render_internal")
         
+        st.divider()
+        st.header("Representações do Grafo")
+
         tab1, tab2, tab3 = st.tabs(["Visualização", "Lista de Adjacência", "Matriz de Adjacência"])
 
         with tab1:
-            if not indices_to_render:
+            if not indices_to_render_internal:
                 st.warning("Nenhum dado para exibir com os filtros atuais.")
             else:
-                graph_service.draw_graph(idx_to_name, indices_to_render)
-
+                highlight_vertex = st.session_state.get("new_vertices", set())
+                graph_service.draw_graph(graph, idx_to_name, indices_to_render_internal,highlight_edges=st.session_state.get("new_edges", set()),highlight_vertex=highlight_vertex)
         with tab2:
-            display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render)
+            display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
 
         with tab3:
             matrix_data = graph_service.get_adjacency_matrix()
             matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
             df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
             
-            if indices_to_render:
-                selected = [idx_to_name[i] for i in indices_to_render]
+            if indices_to_render_internal:
+                selected = [idx_to_name[i] for i in indices_to_render_internal]
                 df = df.loc[selected, selected]
 
             st.dataframe(df)
@@ -133,6 +121,9 @@ def app():
             # Botão de Download SVG
             svg = df_to_svg(df)
             st.download_button("Baixar matriz (SVG)", data=svg.encode("utf-8"), file_name="matriz_fechamento.svg", mime="image/svg+xml")
+     
+    else:
+        st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
     draw_graph_api_sidebar()
 

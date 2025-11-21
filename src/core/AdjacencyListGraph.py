@@ -138,6 +138,7 @@ class AdjacencyListGraph(AbstractGraph):
                 matrix[u][v] = weight
         return matrix
 
+
     def _on_add_vertex(self, new_index: int) -> None:
         """Hook chamado por AbstractGraph.addVertex para expandir estruturas."""
         # Adiciona novas entradas vazias nas listas de adjacência

@@ -148,7 +148,7 @@ class AdjacencyMatrixGraph(AbstractGraph):
                     neighbors[v] = w
             adj_list.append(neighbors)
         return adj_list
-
+    
     def _on_add_vertex(self, new_index: int) -> None:
         """Hook chamado por AbstractGraph.addVertex para expandir a matriz."""
         old_n = len(self.matrix)

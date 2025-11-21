@@ -7,14 +7,27 @@ import random
 
 def _get_graph_from_session() -> AbstractGraph:
     """
-    Helper interno para buscar, validar e retornar o objeto de grafo
-    armazenado no session_state.
+    Retorna o grafo atual do session_state.
+    Garante que seja uma instância de AbstractGraph ou de uma subclasse.
     """
-    if 'graph_obj' not in st.session_state or st.session_state.graph_obj is None:
+    graph = st.session_state.get("graph_obj")
+    if graph is None:
         raise ValueError("Grafo não foi gerado ou carregado no state.")
-    graph = cast(AbstractGraph, st.session_state.graph_obj)
+    
+    # Checa se é do tipo AbstractGraph ou qualquer subclasse
     if not isinstance(graph, AbstractGraph):
-        raise TypeError("O objeto em 'graph_obj' não é uma instância de AbstractGraph.")
+        # fallback: checa se o objeto tem os métodos esperados de AbstractGraph
+        required_methods = [
+            "getVertexCount", "getEdgeCount", "hasEdge",
+            "addEdge", "removeEdge", "getAsAdjacencyList", "getAsAdjacencyMatrix"
+        ]
+        missing_methods = [m for m in required_methods if not callable(getattr(graph, m, None))]
+        if missing_methods:
+            raise TypeError(
+                f"O objeto em 'graph_obj' não é compatível com AbstractGraph. "
+                f"Faltam métodos: {missing_methods}. Tipo atual: {type(graph)}"
+            )
+    
     return graph
 
 def get_vertex_count() -> int:
@@ -32,18 +45,48 @@ def has_edge(u: int, v: int) -> bool:
     graph = _get_graph_from_session()
     return graph.hasEdge(u, v)
 
-def add_edge(u: int, v: int, weight: float = 1.0) -> None:
-    """Adiciona uma aresta (u, v) com um peso."""
+def add_edge(u: int, v: int, weight: float = 1.0) -> bool:
+    """
+    Adiciona uma aresta (u, v) com peso no grafo atual.
+    Retorna True se a aresta foi adicionada, False se ignorada (duplicada ou laço).
+    """
     graph = _get_graph_from_session()
+
+    # Verifica se a aresta já existe ou se é um laço (u == v)
+    if u == v or graph.hasEdge(u, v):
+        return False
+
     graph.addEdge(u, v, weight)
-    # Nota: Isso modifica o grafo no state. 
-    # O Streamlit pode precisar ser re-executado para UI refletir.
+
+    # Marca a aresta como recém-adicionada
+    if "new_edges" not in st.session_state:
+        st.session_state.new_edges = set()
+    st.session_state.new_edges.add((u, v))
+
+    # Atualiza o session_state com o mesmo objeto
+    st.session_state.graph_obj = graph
+    st.session_state.last_added_edge = (u, v)  # Para destaque imediato
+    return True
 
 def remove_edge(u: int, v: int) -> None:
     """Remove a aresta (u, v)."""
     graph = _get_graph_from_session()
     graph.removeEdge(u, v)
     # Nota: Isso modifica o grafo no state.
+
+def add_vertex() -> int:
+    graph = _get_graph_from_session()
+
+    # Chama o método real da classe do grafo
+    new_index = graph.addVertex()
+
+    # Atualiza o state com o grafo modificado
+    st.session_state.graph_obj = graph
+
+    # Guarda para highlight, igual ao comportamento usado para edges
+    st.session_state.last_added_vertex = new_index
+
+    return new_index
 
 
 def is_successor(u: int, v: int) -> bool:
@@ -131,11 +174,11 @@ def get_adjacency_matrix() -> list[list[float]]:
     graph = _get_graph_from_session()
     return graph.getAsAdjacencyMatrix()
 
-def draw_graph(idx_to_name: dict, indices_to_render: list):
-    """
-    Desenha o grafo usando a API Abstrata,
-    independente da implementação.
-    """
+def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list, highlight_vertex=None, highlight_edges=None):    
+
+    if highlight_edges is None:
+        highlight_edges = set()
+ 
     st.subheader("Visualização Gráfica")
 
     graph = _get_graph_from_session()
@@ -220,22 +263,76 @@ def draw_graph(idx_to_name: dict, indices_to_render: list):
     plt.axis("off")
 
     # Arestas
+    
     for u in indices_to_render:
         for v in indices_to_render:
-            if graph.hasEdge(u, v): 
+            if graph.hasEdge(u, v):
+
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
+
+                # Destaque da aresta recém-adicionada
+                if (u, v) in highlight_edges or (v, u) in highlight_edges:
+                    color = "red"
+                    alpha = 0.9
+                    lw = 3
+                    st.write(f"[LOG] Aresta destacada detectada: ({u}, {v})")
+                else:
+                    color = "gray"
+                    alpha = 0.5
+                    lw = 1.5
+
+                dx = x2 - x1
+                dy = y2 - y1
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+
+                head_w = dist * 0.05
+                head_l = dist * 0.08
+
                 plt.arrow(
-                    x1, y1, x2 - x1, y2 - y1,
-                    head_width=10000, head_length=10000,
-                    fc="gray", ec="gray", alpha=0.5, length_includes_head=True
+                    x1, y1, dx, dy,
+                    head_width=head_w,
+                    head_length=head_l,
+                    fc=color,
+                    ec=color,
+                    alpha=alpha,
+                    linewidth=lw,
+                    length_includes_head=True
                 )
 
     # Nós
+    highlight_vertex = st.session_state.get("new_vertices", set())
+
+    # Dentro do loop que desenha os nós
     for i in indices_to_render:
         x, y = positions[i]
-        plt.scatter(x, y, s=120, color="#5DADE2", edgecolors="black", zorder=3)
+        if i in highlight_vertex:
+            node_color = "yellow"
+            node_size = 260
+            edge_color = "red"
+        else:
+            node_color = "#5DADE2"
+            node_size = 120
+            edge_color = "black"
+
+        plt.scatter(
+            x, y,
+            s=node_size,
+            color=node_color,
+            edgecolors=edge_color,
+            linewidths=2,
+            zorder=3
+        )
+
         plt.text(x, y, idx_to_name[i], fontsize=8, ha="center", va="center", color="black")
 
     st.pyplot(plt)
     plt.clf()
+
+def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[tuple[int, int, float]]) -> AbstractGraph:
+    """Constrói um grafo usando a classe de implementação fornecida."""
+    print(f"Construindo grafo com implementação: {impl_class.__name__}")
+    graph = impl_class(vertex_count)
+    for u_idx, v_idx, weight in edges:
+        graph.addEdge(u_idx, v_idx, weight)
+    return graph

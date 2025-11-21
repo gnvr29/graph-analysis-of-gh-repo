@@ -76,7 +76,6 @@ class GithubCollector:
                 time.sleep(60) 
             
             time.sleep(self.delay_seconds) 
-            
             return response.json(), response.links
             
         except requests.exceptions.RequestException as e:
@@ -322,9 +321,19 @@ class GithubCollector:
         print(f"\n--- Coleta de Issues (API) finalizada ---")
 
 
+    def _fetch_pull_request_details(self, pr_number):
+        """Busca o objeto Pull Request completo (inclui merged_by, additions, etc.)."""
+        detail_url = f"{self.base_api_url}/pulls/{pr_number}"
+        
+        print(f"Buscando detalhes completos do PR #{pr_number}...")
+        
+        pr_details_json, _ = self._fetch_api_page(detail_url)
+        return pr_details_json
+
     def collect_all_pull_requests_api(self):
         """
-        Coleta TODOS os pull requests (abertos e fechados) e faz 'yield' de CADA UM.
+        Coleta TODOS os pull requests (abertos e fechados), buscando detalhes
+        completos e aprovações.
         """
         
         page_url = f"{self.base_api_url}/pulls?state=all&per_page=100&sort=created&direction=desc"
@@ -333,8 +342,9 @@ class GithubCollector:
         print("--- Iniciando coleta de TODOS os Pull Requests via API ---")
 
         while page_url:
-            print(f"\n--- Coletando página PRINCIPAL {page_count} de PRs ---")
+            print(f"\n--- Coletando página PRINCIPAL {page_count} de PRs (Resumida) ---")
             
+            # json_data contém a lista de PRs RESUMIDOS
             json_data, pagination_links = self._fetch_api_page(page_url)
             
             if not json_data:
@@ -343,14 +353,22 @@ class GithubCollector:
 
             print(f"Recebidos {len(json_data)} PRs nesta página.")
 
-            for pr in json_data:
-                pr_number = pr['number']
+            for pr_summary in json_data:
+                pr_number = pr_summary['number']
+                
+                pr = self._fetch_pull_request_details(pr_number)
+                
+                if not pr:
+                    print(f"Aviso: Falha ao buscar detalhes completos do PR #{pr_number}. Pulando.")
+                    continue
+
                 print(f"Processando PR #{pr_number}: {pr['title'][:50]}...")
                 
                 status = pr.get('state', 'UNKNOWN').upper()
                 if pr.get('merged_at'):
                     status = 'MERGED'
                 
+                # Passo 2: Buscar sub-dados (Comentários e Reviews)
                 comments_url = f"{self.base_api_url}/issues/{pr_number}/comments?per_page=100"
                 pr_issue_comments = list(self._collect_paginated_api_data(comments_url))
                 
@@ -359,6 +377,12 @@ class GithubCollector:
                 
                 reviews_url = f"{self.base_api_url}/pulls/{pr_number}/reviews?per_page=100"
                 pr_reviews = list(self._collect_paginated_api_data(reviews_url))
+                
+                approvers = set()
+                for review in pr_reviews:
+                    if review.get('state') == 'APPROVED':
+                        approvers.add(review.get('user', {}).get('login'))
+                
                 
                 pr_dict = {
                     'id': pr.get('id'),
@@ -371,9 +395,13 @@ class GithubCollector:
                     'mergedBy': pr.get('merged_by', {}).get('login') if pr.get('merged_by') else None, 
                     'status': status,
                     'body': pr.get('body'),
-                    'comments': pr_issue_comments,     
+                    'additions': pr.get('additions'), 
+                    'deletions': pr.get('deletions'), 
+                    'commits_count': pr.get('commits'),
+                    'comments': pr_issue_comments,    
                     'review_comments': pr_review_comments,
-                    'reviews': pr_reviews
+                    'reviews': pr_reviews,
+                    'approvers': list(approvers) 
                 }
                 
                 yield pr_dict

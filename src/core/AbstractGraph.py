@@ -174,3 +174,5 @@ class AbstractGraph(ABC):
         `new_index` é o índice atribuído ao novo vértice.
         """
         pass
+
+    
