@@ -13,9 +13,10 @@ from src.services.adjacency_list_service import display_adjacency_lists_streamli
 from src.services.adjacency_matrix_service import df_to_svg
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
+from src.utils.streamlit_filters import visualization_filters
 
 def app():
-    st.title("Grafo 2: Fechamento de Issues")
+    st.title("Grafo: Fechamento de Issues")
     st.markdown("""
     **Descrição:** Este grafo representa a relação onde um usuário fecha a issue criada por outro.
     
@@ -90,41 +91,31 @@ def app():
         
         st.success(f"Grafo gerado com sucesso: {graph.getVertexCount()} vértices e {graph.getEdgeCount()} arestas.")
 
-        # Lógica de Filtro para exibição
-        indices_to_render = list(range(graph.getVertexCount()))
-        
-        if filter_with_edges:
-            # Filtra quem tem grau de saída (fechou issues) ou entrada (teve issues fechadas)
-            indices_to_render = [
-                i for i in indices_to_render 
-                if graph.getVertexOutDegree(i) > 0 or graph.getVertexInDegree(i) > 0
-            ]
-        
-        if limit > 0:
-            # Ordena por atividade (soma de in + out degree) para pegar os mais relevantes
-            indices_to_render.sort(key=lambda i: graph.getVertexOutDegree(i) + graph.getVertexInDegree(i), reverse=True)
-            indices_to_render = indices_to_render[:limit]
+        visualization_filters(graph=graph, filter_with_edges=filter_with_edges, limit=limit)
 
-        st.divider()
+        indices_to_render_internal = st.session_state.get("indices_to_render_internal")
         
+        st.divider()
+        st.header("Representações do Grafo")
+
         tab1, tab2, tab3 = st.tabs(["Visualização", "Lista de Adjacência", "Matriz de Adjacência"])
 
         with tab1:
-            if not indices_to_render:
+            if not indices_to_render_internal:
                 st.warning("Nenhum dado para exibir com os filtros atuais.")
             else:
-                graph_service.draw_graph(idx_to_name, indices_to_render)
+                graph_service.draw_graph(idx_to_name, indices_to_render_internal)
 
         with tab2:
-            display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render)
+            display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
 
         with tab3:
             matrix_data = graph_service.get_adjacency_matrix()
             matrix_labels = [idx_to_name.get(i, str(i)) for i in range(len(matrix_data))]
             df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
             
-            if indices_to_render:
-                selected = [idx_to_name[i] for i in indices_to_render]
+            if indices_to_render_internal:
+                selected = [idx_to_name[i] for i in indices_to_render_internal]
                 df = df.loc[selected, selected]
 
             st.dataframe(df)
@@ -132,6 +123,9 @@ def app():
             # Botão de Download SVG
             svg = df_to_svg(df)
             st.download_button("Baixar matriz (SVG)", data=svg.encode("utf-8"), file_name="matriz_fechamento.svg", mime="image/svg+xml")
+     
+    else:
+        st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
     # Ferramentas laterais (Métricas, etc)
     draw_graph_api_sidebar()

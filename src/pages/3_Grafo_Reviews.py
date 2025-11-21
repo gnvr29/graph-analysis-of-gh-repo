@@ -13,11 +13,20 @@ from src.services.adjacency_list_service import display_adjacency_lists_streamli
 from src.services.adjacency_matrix_service import df_to_svg
 from src.utils.neo4j_connector import get_neo4j_service
 from src.utils.streamlit_helpers import draw_graph_api_sidebar
+from src.utils.streamlit_filters import visualization_filters
 
 # ============== FUNÇÃO APP ==============
 def app():
-    st.title("Grafo de Interações entre Autores (Reviews)")
-    st.markdown("Use esta página para carregar dados e analisar as interações.")
+    st.title("Grafo: Interações entre Autores (Reviews)")
+    st.markdown("""
+    **Descrição:** Este grafo representa a relação onde um usuário faz uma review, aprova ou faz o merge de um pull request de outro usuário.
+    
+    * **Origem (Source):** Usuário que faz a review, aprova ou faz o merge.
+    * **Destino (Target):** Usuário que criou o pull request.
+    * **Pesos:**
+        * Revisão/aprovação de pull request — **Peso 4**
+        * Merge de pull request — **Peso 5**
+    """)
 
     PAGE_ID = "reviews" 
     
@@ -98,37 +107,15 @@ def app():
         st.sidebar.header("Operações no Grafo")
 
         # --- LÓGICA DE FILTRO ---
+        visualization_filters(graph=graph, filter_with_edges=filter_with_edges, limit=limit)
 
-        author_activity = []
-        for i in range(graph.getVertexCount()):
-            out_degree = graph.getVertexOutDegree(i)
-            author_activity.append((i, out_degree))
-
-        if filter_with_edges:
-            author_activity = [item for item in author_activity if item[1] > 0]
-        author_activity.sort(key=lambda item: item[1], reverse=True)
-        if limit > 0:
-            author_activity = author_activity[:limit]
-        indices_to_render_internal = [i for i, degree in author_activity]
-        
-        filtered_vertex_names_list = []
-        filtered_name_to_idx_map = {}
-        
-        for original_idx in indices_to_render_internal:
-            author_name = st.session_state.idx_to_name_map[original_idx]
-            filtered_vertex_names_list.append(author_name)
-            # Mapeia o nome do autor filtrado para o seu índice ORIGINAL no grafo.
-            filtered_name_to_idx_map[author_name] = original_idx
-
-        # Atualiza os estados da sessão que serão usados pela sidebar
-        st.session_state.vertex_names_list = sorted(filtered_vertex_names_list)
-        st.session_state.name_to_idx_map = filtered_name_to_idx_map
+        indices_to_render_internal = st.session_state.get("indices_to_render_internal")
 
         # --- RENDERIZAÇÃO EM ABAS ---
         st.divider()
         st.header("Representações do Grafo")
         
-        tab1, tab2, tab3 = st.tabs(["Visualização (Força)", "Lista de Adjacência", "Matriz de Adjacência"])
+        tab1, tab2, tab3 = st.tabs(["Visualização", "Lista de Adjacência", "Matriz de Adjacência"])
 
         with tab1:
             st.info("Visualização do grafo filtrado:")
