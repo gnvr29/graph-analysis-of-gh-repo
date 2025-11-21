@@ -413,11 +413,11 @@ def _remove_edge(vertex_names, name_to_idx):
                 st.error(f"Erro ao remover aresta: {e}")
 
 def _add_vertex(vertex_names):
-     with st.form("form_add_vertex"):
+    with st.form("form_add_vertex"):
         st.subheader("Adicionar Vértice")
         vertex_name_input = st.text_input(
             "Nome do novo vértice:",
-            value="",  # vazio por padrão
+            value="",
             placeholder="Digite um nome opcional"
         )
         submitted_add_vertex = st.form_submit_button("Adicionar Vértice")
@@ -425,13 +425,24 @@ def _add_vertex(vertex_names):
         if submitted_add_vertex:
             try:
                 graph = st.session_state.graph_obj
-                new_index = graph.addVertex()  # adiciona vértice
-                # Se o usuário digitou um nome, usa; senão cria padrão
+                new_index = graph.addVertex()  # índice único
+
+                # Nome do vértice
                 vertex_name = vertex_name_input.strip() or f"Novo_{new_index}"
                 st.session_state.idx_to_name_map[new_index] = vertex_name
                 st.session_state.vertex_names_list.append(vertex_name)
-                
+
+                # ===== Mantém todos os novos vértices =====
+               # Adiciona para destaque
+                if "new_vertices" not in st.session_state:
+                    st.session_state.new_vertices = set()
+                st.session_state.new_vertices.add(new_index)
+
+                # Ainda pode manter last_added_vertex para foco imediato
+                st.session_state.last_added_vertex = new_index
+
                 st.success(f"Vértice '{vertex_name}' adicionado com sucesso! (Índice: {new_index})")
-                st.rerun()  # atualiza sidebar e gráficos
+                st.rerun()
             except Exception as e:
                 st.error(f"Erro ao adicionar vértice: {e}")
+

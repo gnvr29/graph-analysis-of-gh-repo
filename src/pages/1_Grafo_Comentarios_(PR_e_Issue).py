@@ -127,8 +127,8 @@ def app():
                 st.warning(
                     "Nenhum autor corresponde aos filtros selecionados.")
             else:
-                graph_service.draw_graph(
-                    idx_to_name, indices_to_render_internal)
+                highlight_vertex = st.session_state.get("new_vertices", set())
+                graph_service.draw_graph(graph, idx_to_name, indices_to_render_internal,highlight_edges=st.session_state.get("new_edges", set()),highlight_vertex=highlight_vertex)
 
         with tab2:
             st.info("Representação do grafo completo como Lista de Adjacência.")

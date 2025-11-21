@@ -74,6 +74,20 @@ def remove_edge(u: int, v: int) -> None:
     graph.removeEdge(u, v)
     # Nota: Isso modifica o grafo no state.
 
+def add_vertex() -> int:
+    graph = _get_graph_from_session()
+
+    # Chama o método real da classe do grafo
+    new_index = graph.addVertex()
+
+    # Atualiza o state com o grafo modificado
+    st.session_state.graph_obj = graph
+
+    # Guarda para highlight, igual ao comportamento usado para edges
+    st.session_state.last_added_vertex = new_index
+
+    return new_index
+
 
 def is_successor(u: int, v: int) -> bool:
     """Verifica se v é sucessor de u (aresta u -> v)."""
@@ -160,11 +174,11 @@ def get_adjacency_matrix() -> list[list[float]]:
     graph = _get_graph_from_session()
     return graph.getAsAdjacencyMatrix()
 
-def draw_graph(idx_to_name: dict, indices_to_render: list):
-    """
-    Desenha o grafo usando a API Abstrata,
-    independente da implementação.
-    """
+def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list, highlight_vertex=None, highlight_edges=None):    
+
+    if highlight_edges is None:
+        highlight_edges = set()
+ 
     st.subheader("Visualização Gráfica")
 
     graph = _get_graph_from_session()
@@ -249,21 +263,67 @@ def draw_graph(idx_to_name: dict, indices_to_render: list):
     plt.axis("off")
 
     # Arestas
+    
     for u in indices_to_render:
         for v in indices_to_render:
-            if graph.hasEdge(u, v): 
+            if graph.hasEdge(u, v):
+
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
+
+                # Destaque da aresta recém-adicionada
+                if (u, v) in highlight_edges or (v, u) in highlight_edges:
+                    color = "red"
+                    alpha = 0.9
+                    lw = 3
+                    st.write(f"[LOG] Aresta destacada detectada: ({u}, {v})")
+                else:
+                    color = "gray"
+                    alpha = 0.5
+                    lw = 1.5
+
+                dx = x2 - x1
+                dy = y2 - y1
+                dist = math.sqrt(dx*dx + dy*dy) + 1
+
+                head_w = dist * 0.05
+                head_l = dist * 0.08
+
                 plt.arrow(
-                    x1, y1, x2 - x1, y2 - y1,
-                    head_width=10000, head_length=10000,
-                    fc="gray", ec="gray", alpha=0.5, length_includes_head=True
+                    x1, y1, dx, dy,
+                    head_width=head_w,
+                    head_length=head_l,
+                    fc=color,
+                    ec=color,
+                    alpha=alpha,
+                    linewidth=lw,
+                    length_includes_head=True
                 )
 
     # Nós
+    highlight_vertex = st.session_state.get("new_vertices", set())
+
+    # Dentro do loop que desenha os nós
     for i in indices_to_render:
         x, y = positions[i]
-        plt.scatter(x, y, s=120, color="#5DADE2", edgecolors="black", zorder=3)
+        if i in highlight_vertex:
+            node_color = "yellow"
+            node_size = 260
+            edge_color = "red"
+        else:
+            node_color = "#5DADE2"
+            node_size = 120
+            edge_color = "black"
+
+        plt.scatter(
+            x, y,
+            s=node_size,
+            color=node_color,
+            edgecolors=edge_color,
+            linewidths=2,
+            zorder=3
+        )
+
         plt.text(x, y, idx_to_name[i], fontsize=8, ha="center", va="center", color="black")
 
     st.pyplot(plt)

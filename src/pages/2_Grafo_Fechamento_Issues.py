@@ -57,7 +57,6 @@ def app():
     if st.button("Gerar e Analisar Grafo"):
         with st.spinner("Buscando dados de fechamento de issues..."):
             try:
-                # AQUI ESTÁ A MÁGICA: Solicitamos apenas o tipo ISSUE_CLOSED
                 idx_to_name, edges = fetch_authors_and_edges(neo4j_service, enabled_interaction_types={"ISSUE_CLOSED"})
                 
                 if not idx_to_name:
@@ -73,7 +72,6 @@ def app():
                 
                 graph = graph_service.build_graph(impl_class, vertex_count, edges)
 
-                # Armazenar no Session State
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
                 st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
@@ -104,8 +102,8 @@ def app():
             if not indices_to_render_internal:
                 st.warning("Nenhum dado para exibir com os filtros atuais.")
             else:
-                graph_service.draw_graph(idx_to_name, indices_to_render_internal)
-
+                highlight_vertex = st.session_state.get("new_vertices", set())
+                graph_service.draw_graph(graph, idx_to_name, indices_to_render_internal,highlight_edges=st.session_state.get("new_edges", set()),highlight_vertex=highlight_vertex)
         with tab2:
             display_adjacency_lists_streamlit(graph=graph, idx_to_name=idx_to_name, indices_to_render=indices_to_render_internal)
 
@@ -127,7 +125,6 @@ def app():
     else:
         st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
-    # Ferramentas laterais (Métricas, etc)
     draw_graph_api_sidebar()
 
 if __name__ == "__main__":
