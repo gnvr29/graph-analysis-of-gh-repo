@@ -44,28 +44,54 @@ st.title(PAGE_TITLE)
 # 1. Encontrar todos os grafos carregados na sessão
 loaded_graphs: Dict[str, AbstractGraph] = {}
 loaded_names_maps: Dict[str, Dict[int, str]] = {}
-# Não precisamos mais de processed_graph_display_names se o check de unicidade for feito diretamente em loaded_graphs
 
 for key, value in st.session_state.items():
+
+   # -----------------------------------------------------
+    # 1) GRAFOS CARREGADOS VIA SIDEBAR (graph_obj_*)
+    # -----------------------------------------------------
     if key.startswith("graph_obj_") and value is not None:
         
-        current_graph_display_name = None
-        graph_obj_full_key = key # e.g., "graph_obj_my_custom_graph"
-        graph_id_suffix = key.replace("graph_obj_", "") # e.g., "my_custom_graph"
+        graph_obj_full_key = key                          # ex: graph_obj_custom_comments
+        graph_id_suffix = key.replace("graph_obj_", "")   # ex: custom_comments
 
-        # Tenta obter o nome de exibição explicitamente armazenado
-        display_name_key_in_session = f"display_name_for_{graph_obj_full_key}"
-        if display_name_key_in_session in st.session_state:
-            current_graph_display_name = st.session_state[display_name_key_in_session]
+        # Tenta obter o nome de exibição armazenado na sessão
+        display_name_key = f"display_name_for_{graph_obj_full_key}"
+
+        if display_name_key in st.session_state:
+            display_name = st.session_state[display_name_key]
         else:
-            # Fallback genérico para grafos que não têm um nome de exibição explícito salvo
-            # (e.g., grafos de outras páginas ou sessões antigas)
-            current_graph_display_name = graph_id_suffix.replace("_", " ").title()
-        
-        # Adiciona o grafo apenas se o nome de exibição ainda não estiver em loaded_graphs
-        if current_graph_display_name not in loaded_graphs:
-            loaded_graphs[current_graph_display_name] = value
-            loaded_names_maps[current_graph_display_name] = st.session_state.get(f"names_map_{graph_id_suffix}", {})
+            # fallback genérico para grafos sem nome explícito salvo
+            display_name = graph_id_suffix.replace("_", " ").title()
+
+        # Adiciona o grafo somente se ainda não estiver na lista
+        if display_name not in loaded_graphs:
+            loaded_graphs[display_name] = value
+
+            names_map_key = f"names_map_{graph_id_suffix}"
+            names_map = st.session_state.get(names_map_key, {})
+            loaded_names_maps[display_name] = names_map
+
+
+    # -----------------------------------------------------
+    # 2) GRAFOS COMPLETOS DE OUTRAS PÁGINAS (full_*_obj)
+    # -----------------------------------------------------
+    # elif key.startswith("full_") and key.endswith("_obj") and value is not None:
+
+    #     # Extrai o page_id: full_comments_obj → comments
+    #     page_id = key.replace("full_", "").replace("_obj", "")
+
+    #     # Nome de exibição padronizado
+    #     display_name = f"Grafo Completo - {page_id.capitalize()}"
+
+    #     if display_name not in loaded_graphs:
+    #         loaded_graphs[display_name] = value
+
+    #         # Primeiro tenta names_map_page, depois fallback para names_map global
+    #         names_map_key = f"names_map_{page_id}"
+    #         names_map = st.session_state.get(names_map_key, st.session_state.get("names_map", {}))
+
+    #         loaded_names_maps[display_name] = names_map
 
 # --------------------------------------------------------
 # === SIDEBAR: CONTROLE DE ANÁLISE ESTRUTURAL (Geração) ===
@@ -189,6 +215,7 @@ if st.sidebar.button("Calcular", key="sidebar_calculate_structure"):
                 st.session_state['last_calculated_graph_name'] = dynamic_graph_display_name
 
                 st.success("Cálculos Estruturais concluídos e grafo preparado para outras análises!")
+                st.rerun()
 
     except Exception as e:
         st.error(f"Erro ao calcular Estrutura: {e}")
@@ -218,7 +245,7 @@ if st.sidebar.button("Calcular", key="sidebar_calculate_structure"):
 
 if not loaded_graphs:
     st.error("Nenhum grafo foi carregado.")
-    st.info("Use a **Configuração da Análise Estrutural** na barra lateral para começar a análise, ou gere um grafo na página principal.")
+    st.info("Use a **Configuração da Análise Estrutural** na barra lateral para começar a análise.")
     
     # Exibe os resultados da Estrutura se o usuário acabou de calcular
     # (Ainda usa a lógica antiga aqui para compatibilidade caso o 'all_graphs_structure_results' ainda não tenha sido populado)
