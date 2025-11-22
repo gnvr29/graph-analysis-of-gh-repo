@@ -7,7 +7,7 @@ from src.core.AbstractGraph import AbstractGraph
 import src.services.graph_service as graph_service
 
 # Importamos a função compartilhada que agora sabe buscar ISSUE_CLOSED
-from src.services.shared_queries import (WEIGHTS, fetch_authors_and_edges)
+from src.services.shared_queries import fetch_authors_and_edges
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg

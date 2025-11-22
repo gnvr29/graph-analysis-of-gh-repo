@@ -48,7 +48,7 @@ def app():
     if analysis_mode == "Grafo Integrado (Todas as interações)":
         interaction_types = set(WEIGHTS.keys())
     elif analysis_mode == "Apenas Comentários":
-        interaction_types = {"COMMENT", "ISSUE_COMMENTED"}
+        interaction_types = {"COMMENT_PR_ISSUE", "OPENED_ISSUE_COMMENTED"}
     elif analysis_mode == "Apenas Reviews/Aprovações/Merge":
         interaction_types = {"REVIEW", "APPROVED", "MERGE"}
     elif analysis_mode == "Apenas Fechamentos de Issue":

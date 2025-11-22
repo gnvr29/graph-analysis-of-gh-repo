@@ -2,21 +2,13 @@ import streamlit as st
 import streamlit.components.v1 as components
 import re
 from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
-from src.services.shared_queries import (WEIGHTS)
+from src.core.AdjacencyListGraph import AdjacencyListGraph
 
 try:
     import svgwrite
 except ImportError:
     st.error("Biblioteca 'svgwrite' não encontrada. Por favor, instale com: pip install svgwrite")
     st.stop()
-
-try:
-    from src.core.AdjacencyListGraph import AdjacencyListGraph
-except ImportError as e:
-    raise ImportError(
-        "Não foi possível importar AdjacencyListGraph. "
-        "Verifique a estrutura de pastas."
-    ) from e
 
 def truncate_name(name: str, max_len: int = 12) -> str:
     return name if len(name) <= max_len else name[:max_len - 3] + "..."

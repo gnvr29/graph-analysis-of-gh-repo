@@ -6,7 +6,7 @@ from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
 from src.core.AbstractGraph import AbstractGraph
 import src.services.graph_service as graph_service
 
-from src.services.shared_queries import (WEIGHTS, fetch_authors_and_edges)
+from src.services.shared_queries import fetch_authors_and_edges
 
 from src.services.adjacency_list_service import display_adjacency_lists_streamlit
 from src.services.adjacency_matrix_service import df_to_svg
@@ -67,7 +67,7 @@ def app():
         with st.spinner("Buscando dados e construindo grafo..."):
             try:
                 idx_to_name, edges = fetch_authors_and_edges(
-                    neo4j_service, enabled_interaction_types={"COMMENT"})
+                    neo4j_service, enabled_interaction_types={"COMMENT_PR_ISSUE"})
                 if not idx_to_name:
                     st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
                     st.session_state.graph_obj = None
