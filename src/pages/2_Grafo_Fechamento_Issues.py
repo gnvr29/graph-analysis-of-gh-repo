@@ -26,6 +26,7 @@ def app():
     """)
 
     PAGE_ID = "fechamento_issues" 
+    GRAPH_SESSION_KEY = f"graph_obj_{PAGE_ID}"
     
     if 'current_graph_id' not in st.session_state:
         st.session_state.current_graph_id = PAGE_ID
@@ -72,6 +73,7 @@ def app():
                 
                 graph = graph_service.build_graph(impl_class, vertex_count, edges)
 
+                st.session_state[GRAPH_SESSION_KEY] = graph
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {name: idx for idx, name in idx_to_name.items()}
                 st.session_state.vertex_names_list = sorted(list(idx_to_name.values()))
@@ -83,7 +85,7 @@ def app():
 
     
     # --- RENDERIZAÇÃO --- 
-    if st.session_state.get("graph_obj") is not None:
+    if st.session_state.get("graph_obj") is not None and st.session_state.current_graph_id == PAGE_ID:
         graph = st.session_state.graph_obj
         idx_to_name = st.session_state.idx_to_name_map
         

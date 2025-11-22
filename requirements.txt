@@ -27,6 +27,7 @@ numpy==2.3.4
 packaging==25.0
 pandas==2.3.3
 pillow==12.0.0
+plotly==6.5.0
 pluggy==1.6.0
 protobuf==6.33.0
 pyarrow==21.0.0

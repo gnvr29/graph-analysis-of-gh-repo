@@ -27,6 +27,7 @@ def app():
     """)
 
     PAGE_ID = "comentarios"
+    GRAPH_SESSION_KEY = f"graph_obj_{PAGE_ID}"
 
     if 'current_graph_id' not in st.session_state:
         st.session_state.current_graph_id = PAGE_ID
@@ -87,6 +88,7 @@ def app():
                     impl_class, vertex_count, edges)
 
                 # --- Armazenar no Session State ---
+                st.session_state[GRAPH_SESSION_KEY] = graph
                 st.session_state.graph_obj = graph
                 st.session_state.name_to_idx_map = {
                     name: idx for idx, name in idx_to_name.items()}
@@ -101,7 +103,7 @@ def app():
                 st.session_state.graph_obj = None
 
     # --- RENDERIZAÇÃO ---
-    if st.session_state.get("graph_obj") is not None:
+    if st.session_state.get("graph_obj") is not None and st.session_state.current_graph_id == PAGE_ID:
         graph = st.session_state.graph_obj
         idx_to_name = st.session_state.idx_to_name_map
 
