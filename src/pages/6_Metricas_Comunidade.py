@@ -1,4 +1,3 @@
-# pages/2_Métricas_de_Análise.py (Versão Corrigida e Funcional)
 from typing import List, Tuple, Dict, Any
 import streamlit as st
 import sys
@@ -7,8 +6,7 @@ import importlib
 import pandas as pd
 import plotly.express as px
 
-# Ajuste do PATH (se necessário)
-try:
+try:    
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, '..'))
     if project_root not in sys.path:
@@ -16,13 +14,11 @@ try:
 except Exception:
     pass
     
-# Imports da Lógica e Classes Core
 import src.services.graph_service as graph_service 
 from src.core.AbstractGraph import AbstractGraph
-from src.core.AdjacencyListGraph import AdjacencyListGraph # Necessário para build_simple_graph
+from src.core.AdjacencyListGraph import AdjacencyListGraph
 from src.utils.neo4j_connector import get_neo4j_service
 
-# Imports dos Módulos UI criados
 import src.ui.centrality_ui as centrality_ui
 import src.ui.community_ui as community_ui
 
@@ -65,7 +61,7 @@ def display_structure_results(res: Dict[str, Any]):
     with col3:
         st.metric(label="Assortatividade", value=f"{res['assortativity']:.4f}", help="Correlação de grau.")
 
-    st.subheader("📝 Interpretação")
+    st.subheader("Interpretação")
     # ... (Lógica de interpretação omitida para brevidade, mas deve ser mantida) ...
     density = res['density']
     clustering = res['clustering']
@@ -86,7 +82,7 @@ def display_structure_results(res: Dict[str, Any]):
     st.markdown(f"- **Assortatividade:** Indica uma **{assort_interp}**.")
 
     # --- GRÁFICO EXTRA: DISPERSÃO DE GRAUS ---
-    st.subheader("🔎 Visualizando a Assortatividade")
+    st.subheader("Visualizando a Assortatividade")
     scatter_data = res['scatter_data']
     max_degree = res['max_degree']
 
@@ -114,10 +110,26 @@ def display_structure_results(res: Dict[str, Any]):
 
 # 1. Encontrar todos os grafos carregados na sessão
 loaded_graphs: Dict[str, AbstractGraph] = {}
+loaded_names_maps: Dict[str, Dict[int, str]] = {}
+processed_graph_display_names = set() # Para evitar duplicatas de nomes de exibição
+
 for key, value in st.session_state.items():
     if key.startswith("graph_obj_") and value is not None:
-        graph_name = key.replace("graph_obj_", "").replace("_", " ").title()
-        loaded_graphs[graph_name] = value
+        
+        current_graph_display_name = None
+        graph_id_suffix = key.replace("graph_obj_", "") # e.g., "my_custom_graph" or "dynamic_structure_Grafo_Integrado"
+
+        # Tenta obter o nome de exibição explicitamente armazenado para grafos dinâmicos/calculados
+        display_name_key_in_session = f"display_name_for_{key}"
+        if display_name_key_in_session in st.session_state:
+            current_graph_display_name = st.session_state[display_name_key_in_session]
+        else:
+            current_graph_display_name = graph_id_suffix.replace("_", " ").title() 
+        if current_graph_display_name and current_graph_display_name not in processed_graph_display_names:
+            loaded_graphs[current_graph_display_name] = value
+            # A chave para o names_map usa o mesmo sufixo do graph_obj
+            loaded_names_maps[current_graph_display_name] = st.session_state.get(f"names_map_{graph_id_suffix}", {})
+            processed_graph_display_names.add(current_graph_display_name)
 
 # --------------------------------------------------------
 # === SIDEBAR: CONTROLE DE ANÁLISE ESTRUTURAL (Geração) ===
@@ -130,7 +142,7 @@ analysis_mode = st.sidebar.selectbox(
     (
         "Grafo Integrado (Todas as interações)",
         "Apenas Comentários",
-        "Apenas Reviews/Aprovações",
+        "Apenas Reviews/Aprovações/Merge",
         "Apenas Fechamentos de Issue"
     ),
     key="sidebar_structure_analysis_mode"
@@ -147,9 +159,9 @@ if st.sidebar.button("Calcular Estrutura", key="sidebar_calculate_structure"):
     if analysis_mode == "Grafo Integrado (Todas as interações)":
         interaction_types = set(st.session_state.shared_queries.WEIGHTS.keys())
     elif analysis_mode == "Apenas Comentários":
-        interaction_types = {"COMMENT", "ISSUE_COMMENTED"}
-    elif analysis_mode == "Apenas Reviews/Aprovações":
-        interaction_types = {"REVIEW", "MERGE"}
+        interaction_types = {"COMMENT_PR_ISSUE", "OPENED_ISSUE_COMMENTED"}
+    elif analysis_mode == "Apenas Reviews/Aprovações/Merge":
+        interaction_types = {"REVIEW", "APPROVED", "MERGE"}
     elif analysis_mode == "Apenas Fechamentos de Issue":
         interaction_types = {"ISSUE_CLOSED"}
         
@@ -163,6 +175,14 @@ if st.sidebar.button("Calcular Estrutura", key="sidebar_calculate_structure"):
             if not idx_to_name:
                 st.warning("Nenhum dado encontrado para esta seleção.")
                 st.session_state.structure_results = None
+                if 'last_calculated_graph_name' in st.session_state:
+                    del st.session_state['last_calculated_graph_name']
+                # Limpa também as entries específicas do grafo dinâmico
+                dynamic_graph_key_temp = f"dynamic_structure_graph_{analysis_mode.replace(' ', '_').replace('(', '').replace(')', '')}"
+                if f"graph_obj_{dynamic_graph_key_temp}" in st.session_state:
+                    del st.session_state[f"graph_obj_{dynamic_graph_key_temp}"]
+                if f"names_map_{dynamic_graph_key_temp}" in st.session_state:
+                    del st.session_state[f"names_map_{dynamic_graph_key_temp}"]
             else:
                 vertex_count = len(idx_to_name)
                 edge_count = len(edges)
@@ -201,12 +221,42 @@ if st.sidebar.button("Calcular Estrutura", key="sidebar_calculate_structure"):
                     'max_degree': max(degrees) if degrees else 0,
                     'idx_to_name': idx_to_name
                 }
-                st.success("Cálculos Estruturais concluídos!")
+                dynamic_graph_key_suffix = analysis_mode.replace(' ', '_').replace('(', '').replace(')', '')
+                dynamic_graph_obj_key = f"graph_obj_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+                dynamic_names_map_key = f"names_map_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+                dynamic_graph_display_name = f"Estrutura Calculada: {analysis_mode}"
+                
+                st.session_state[dynamic_graph_obj_key] = graph
+                st.session_state[dynamic_names_map_key] = idx_to_name
+                
+                # Define o grafo recém-calculado como o padrão para seleção nas abas
+                st.session_state['last_calculated_graph_name'] = dynamic_graph_display_name
+
+                st.success("Cálculos Estruturais concluídos e grafo preparado para outras análises!")
 
     except Exception as e:
         st.error(f"Erro ao calcular Estrutura: {e}")
         st.session_state.structure_results = None
+        if 'last_calculated_graph_name' in st.session_state:
+            del st.session_state['last_calculated_graph_name']
+        dynamic_graph_key_suffix = analysis_mode.replace(' ', '_').replace('(', '').replace(')', '')
+        dynamic_graph_obj_key = f"graph_obj_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+        dynamic_names_map_key = f"names_map_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+        if dynamic_graph_obj_key in st.session_state:
+            del st.session_state[dynamic_graph_obj_key]
+        if dynamic_names_map_key in st.session_state:
+            del st.session_state[dynamic_names_map_key]
 
+# Isso é feito APÓS a lógica do botão, para garantir que o grafo recém-calculado seja incluído.
+if 'last_calculated_graph_name' in st.session_state:
+    dynamic_graph_display_name = st.session_state['last_calculated_graph_name']
+    dynamic_graph_key_suffix = dynamic_graph_display_name.replace('Estrutura Calculada: ', '').replace(' ', '_').replace('(', '').replace(')', '')
+    dynamic_graph_obj_key = f"graph_obj_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+    dynamic_names_map_key = f"names_map_dynamic_structure_graph_{dynamic_graph_key_suffix}"
+
+    if dynamic_graph_obj_key in st.session_state and st.session_state[dynamic_graph_obj_key] is not None:
+        loaded_graphs[dynamic_graph_display_name] = st.session_state[dynamic_graph_obj_key]
+        loaded_names_maps[dynamic_graph_display_name] = st.session_state[dynamic_names_map_key] 
 
 # --------------------------------------------------------
 # === VERIFICAÇÃO DE PRÉ-REQUISITOS (BLOQUEIO) ===
@@ -214,7 +264,7 @@ if st.sidebar.button("Calcular Estrutura", key="sidebar_calculate_structure"):
 
 if not loaded_graphs:
     # Se não houver grafos, só exibe a mensagem de instrução e os resultados de Estrutura (se calculados)
-    st.error("Nenhum grafo foi carregado para Centralidade ou Comunidade.")
+    st.error("Nenhum grafo foi carregado.")
     st.info("Use a **Configuração da Análise Estrutural** na barra lateral para começar a análise, ou gere um grafo na página principal.")
     
     # Exibe os resultados da Estrutura se o usuário acabou de calcular
@@ -231,16 +281,23 @@ if not loaded_graphs:
 
 # 2. Seletor de Grafo (Para Centralidade e Comunidade)
 st.header("Selecione o Grafo de Origem")
+if 'last_calculated_graph_name' in st.session_state and st.session_state['last_calculated_graph_name'] in loaded_graphs:
+    try:
+        default_index = list(loaded_graphs.keys()).index(st.session_state['last_calculated_graph_name'])
+    except ValueError:
+        pass # Caso o nome não seja encontrado (improvável se o check acima estiver correto)
+
 graph_choice_name = st.selectbox(
     "Escolha qual grafo analisar:",
     list(loaded_graphs.keys()),
+    index=default_index, # <--- Usa o índice padrão
     key="analysis_graph_selector"
 )
 
 # 3. Preparar dados do grafo SELECIONADO (para Centralidade e Comunidade)
 try:
     graph = loaded_graphs[graph_choice_name]
-    names_map = st.session_state.get('idx_to_name_map') or {}
+    names_map = loaded_names_maps.get(graph_choice_name, {})
 
     if hasattr(graph, 'getAsAdjacencyList'):
         adj_list = graph.getAsAdjacencyList()
@@ -268,7 +325,7 @@ except Exception as e:
 
 # --- Abas para Centralidade, Comunidade e Estrutura ---
 tab_structure, tab_centrality, tab_community = st.tabs(
-    ["⭐ Estrutura (Resultados)", "📊 Centralidade", "👥 Comunidade"]
+    ["Estrutura (Resultados)", "Centralidade", "Comunidade"]
 )
 
 # ====================================================================
