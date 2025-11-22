@@ -75,10 +75,25 @@ def draw_graph_api_sidebar():
 
 
 def propriedades_gerais(vertex_names):
+    indices_to_render = st.session_state.get("indices_to_render_internal")
+    graph = st.session_state.get("graph_obj")
+    
     with st.sidebar.expander("Propriedades Gerais", expanded=True):
         try:
+            if indices_to_render and len(indices_to_render) > 0:
+                filtered_edge_count = 0
+                if graph:
+                    adj_list = graph_service.get_adjacency_list() # Obtém a lista de adjacência do grafo completo
+                    # Itera sobre a lista de adjacência completa, mas conta arestas apenas se ambos os vértices (origem e destino) estiverem no conjunto filtrado
+                    for u_idx, neighbors in enumerate(adj_list):
+                        if u_idx in indices_to_render: # Verifica se o vértice de origem faz parte do filtro
+                            # Itera apenas as chaves (índices dos vizinhos) do dicionário de adjacência
+                            for v_idx in neighbors.keys():
+                                if v_idx in indices_to_render: # Verifica se o vizinho v_idx também faz parte do filtro
+                                    filtered_edge_count += 1       
+
             st.metric("Vértices", len(vertex_names))
-            st.metric("Arestas", graph_service.get_edge_count())
+            st.metric("Arestas", filtered_edge_count)
             
             col1, col2 = st.columns(2)
             col1.metric("É Conexo?", "Sim" if graph_service.is_connected() else "Não")

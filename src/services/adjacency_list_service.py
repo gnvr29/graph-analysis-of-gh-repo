@@ -69,7 +69,7 @@ def _get_neighbors_from_graph(graph_obj, node_idx: int, is_predecessor_view: boo
                     if weight != 0:
                         neighbors[u_idx] = weight
     else:
-        st.error(f"Erro: Tipo de grafo não suportado para renderização de lista de adjacência: {type(graph_obj).__name__}")
+        st.error(f"Erro: Instância de grafo não reconhecida para: {type(graph_obj).__name__}. Tente gerar o grafo novamente")
         return {} 
 
     return neighbors
