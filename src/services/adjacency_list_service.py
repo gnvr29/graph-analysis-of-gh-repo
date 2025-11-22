@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import re
+from src.core.AdjacencyMatrixGraph import AdjacencyMatrixGraph
 from src.services.shared_queries import (WEIGHTS)
 
 try:
@@ -41,13 +42,52 @@ def _prepare_svg_for_download(svg_content: str, width: int, height: int) -> str:
     
     return svg_content
 
+def _get_neighbors_from_graph(graph_obj, node_idx: int, is_predecessor_view: bool):
+    """
+    Função auxiliar para obter os vizinhos (sucessores ou predecessores) de um nó,
+    independentemente da implementação do grafo (lista ou matriz de adjacência).
+    Retorna um dicionário {vizinho_idx: peso}.
+    """
+    neighbors = {}
+
+    # Caso 1: Grafo é uma Lista de Adjacência
+    if isinstance(graph_obj, AdjacencyListGraph):
+        if not is_predecessor_view: 
+            neighbors = graph_obj.adj_out[node_idx]
+        else:
+            neighbors = graph_obj.adj_in[node_idx]
+
+    # Caso 2: Grafo é uma Matriz de Adjacência (Assumindo que tenha um método get_adjacency_matrix)
+    elif isinstance(graph_obj, AdjacencyMatrixGraph):
+        matrix = graph_obj.getAsAdjacencyMatrix()
+        num_nodes = len(matrix)
+
+        if not (0 <= node_idx < num_nodes):
+            return {}
+
+        if not is_predecessor_view: 
+            for v_idx in range(num_nodes):
+                weight = matrix[node_idx][v_idx]
+                if weight != 0: 
+                    neighbors[v_idx] = weight
+        else: 
+            for u_idx in range(num_nodes):
+                if 0 <= u_idx < num_nodes:
+                    weight = matrix[u_idx][node_idx]
+                    if weight != 0:
+                        neighbors[u_idx] = weight
+    else:
+        st.error(f"Erro: Tipo de grafo não suportado para renderização de lista de adjacência: {type(graph_obj).__name__}")
+        return {} 
+
+    return neighbors
+
 # ============== FUNÇÃO DE DISPLAY ==============
 
 def _render_adjacency_list_svg(
-    graph: "AdjacencyListGraph", 
+    graph, 
     idx_to_name: dict[int, str], 
     indices_to_render: list[int],
-    graph_data_attribute: str, # e.g., "adj_out" ou "adj_in"
     title: str,
     download_filename_prefix: str,
     is_predecessor_view: bool = False
@@ -134,16 +174,21 @@ def _render_adjacency_list_svg(
 
         current_cursor_x = u_box_x + NODE_BOX_WIDTH
                 
-        neighbors_map = getattr(graph, graph_data_attribute, {})
-        neighbors_for_u = {}
-        if isinstance(neighbors_map, dict):
-            neighbors_for_u = neighbors_map.get(u, {})
-        elif isinstance(neighbors_map, list) and u < len(neighbors_map) and isinstance(neighbors_map[u], dict):
-            neighbors_for_u = neighbors_map[u]
+        # neighbors_map = getattr(graph, graph_data_attribute, {})
+        # neighbors_for_u = {}
+        # if isinstance(neighbors_map, dict):
+        #     neighbors_for_u = neighbors_map.get(u, {})
+        # elif isinstance(neighbors_map, list) and u < len(neighbors_map) and isinstance(neighbors_map[u], dict):
+        #     neighbors_for_u = neighbors_map[u]
         
-        neighbors = sorted(neighbors_for_u.items(), key=lambda it: it[1], reverse=True)
-        # Filtra os vizinhos por aqueles foram definidos no filtro
-        neighbors = [(v, w) for (v, w) in neighbors if v in indices_to_render]
+        # neighbors = sorted(neighbors_for_u.items(), key=lambda it: it[1], reverse=True)
+        # # Filtra os vizinhos por aqueles foram definidos no filtro
+        # neighbors = [(v, w) for (v, w) in neighbors if v in indices_to_render]
+
+        neighbors_for_u = _get_neighbors_from_graph(graph, u, is_predecessor_view)
+
+        neighbors_sorted = sorted(neighbors_for_u.items(), key=lambda it: it[1], reverse=True)
+        neighbors = [(v, w) for (v, w) in neighbors_sorted if v in indices_to_render]
 
         if neighbors:
             # Conexoes para cada vizinho
@@ -211,7 +256,7 @@ def _render_adjacency_list_svg(
                 g_adj.add(t_adj)
 
                 if not is_predecessor_view:
-                    tooltip_text = f"{adj_name} (peso: {w})"
+                    tooltip_text = f"{adj_name} (peso de {author_name} para {adj_name}: {w})"
                 else:
                     tooltip_text = f"{adj_name} (peso de {adj_name} para {author_name}: {w})"
 
@@ -264,7 +309,7 @@ def _render_adjacency_list_svg(
 # ============== FUNÇÃO PRINCIPAL DE DISPLAY NO STREAMLIT ==============
 
 def display_adjacency_lists_streamlit(
-    graph: "AdjacencyListGraph", 
+    graph, 
     idx_to_name: dict[int, str], 
     indices_to_render: list[int]  
 ) -> None:
@@ -277,7 +322,6 @@ def display_adjacency_lists_streamlit(
         graph=graph,
         idx_to_name=idx_to_name,
         indices_to_render=indices_to_render,
-        graph_data_attribute="adj_out",
         title="Lista de Adjacência: Sucessores",
         download_filename_prefix="lista_adjacencia_sucessores",
         is_predecessor_view=False
@@ -290,16 +334,7 @@ def display_adjacency_lists_streamlit(
         graph=graph,
         idx_to_name=idx_to_name,
         indices_to_render=indices_to_render,
-        graph_data_attribute="adj_in", 
         title="Lista de Adjacência: Predecessores",
         download_filename_prefix="lista_adjacencia_predecessores",
         is_predecessor_view=True
     )
-
-    # Legenda de pesos
-    st.markdown("---")
-    st.subheader(f"Legenda dos Pesos (Para {len(indices_to_render)} autores)")
-    st.write(f"- Comentário em Issue/PR: {WEIGHTS.get('COMMENT', 'N/A')}")
-    st.write(f"- Abertura de Issue comentada: {WEIGHTS.get('ISSUE_COMMENTED', 'N/A')}")
-    st.write(f"- Revisão/Aprovação de PR: {WEIGHTS.get('REVIEW', 'N/A')}")
-    st.write(f"- Merge de PR: {WEIGHTS.get('MERGE', 'N/A')}")

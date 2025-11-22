@@ -87,7 +87,8 @@ def app():
         graph = st.session_state.graph_obj
         idx_to_name = st.session_state.idx_to_name_map
         
-        st.success(f"Grafo gerado com sucesso: {graph.getVertexCount()} vértices e {graph.getEdgeCount()} arestas.")
+        st.success(
+            f"Grafo gerado com sucesso usando: **{type(graph).__name__}**")
 
         visualization_filters(graph=graph, filter_with_edges=filter_with_edges, limit=limit)
 
