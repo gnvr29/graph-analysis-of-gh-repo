@@ -16,30 +16,33 @@ from src.utils.streamlit_filters import visualization_filters
 
 # ============== FUNÇÃO APP ==============
 def app():
-    st.title("Grafo: Fechamento de Issues")
+    st.title("Grafo: Reviews/Aprovações/Merge de PR")
     st.markdown("""
-    **Descrição:** Este grafo representa a relação onde um usuário fecha a issue criada por outro.
+    **Descrição:** Este grafo representa a relação onde um usuário faz uma review, aprova ou faz o merge de um pull request de outro usuário.
     
-    * **Origem (Source):** Usuário que fechou a issue.
-    * **Destino (Target):** Usuário que criou a issue.
-    * **Peso:** Quantidade de issues fechadas.
+    * **Origem (Source):** Usuário que faz a review, aprova ou faz o merge.
+    * **Destino (Target):** Usuário que criou o pull request.
+    * **Pesos:**
+        * Revisão/aprovação de pull request — **Peso 4**
+        * Merge de pull request — **Peso 5**
     """)
 
-    PAGE_ID = "fechamento_issues" 
-    ACTIVE_GRAPH_KEY = "graph_obj" 
+    PAGE_ID = "reviews" 
+    # GRAFO ATIVO/FILTRADO (usado para análise e visualização)
+    ACTIVE_GRAPH_KEY = "graph_obj"
+    # GRAFO COMPLETO (fonte de dados para re-filtragem)
     FULL_GRAPH_KEY = f"full_{PAGE_ID}_obj"
     
     if 'current_graph_id' not in st.session_state:
         st.session_state.current_graph_id = PAGE_ID
 
     if st.session_state.current_graph_id != PAGE_ID:
-        print(
-            f"Mudando de página, limpando grafo antigo ({st.session_state.current_graph_id})...")
+        print(f"Mudando de página, limpando grafo antigo ({st.session_state.current_graph_id})...")
         st.session_state[ACTIVE_GRAPH_KEY] = None
         st.session_state[FULL_GRAPH_KEY] = None
         st.session_state.vertex_names_list = []
         st.session_state.name_to_idx_map = {}
-        st.session_state.idx_to_name_map = {} 
+        st.session_state.idx_to_name_map = {} # Mapeamento completo
         st.session_state.current_graph_id = PAGE_ID
 
     # --- ESCOLHA DA IMPLEMENTAÇÃO ---
@@ -64,14 +67,15 @@ def app():
         st.stop()
 
     if st.button("Gerar e Analisar Grafo"):
-        with st.spinner("Buscando dados de fechamento de issues e construindo grafo..."):
+        with st.spinner("Buscando dados e construindo grafo..."):
             try:
                 # 1. Busca dados
                 idx_to_name_full, edges = fetch_authors_and_edges(
-                    neo4j_service, enabled_interaction_types={"ISSUE_CLOSED"})
+                    neo4j_service, enabled_interaction_types={"REVIEW", "APPROVED", "MERGE"})
                 
                 if not idx_to_name_full:
-                    st.warning("Nenhum autor encontrado.")
+                    st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
+                    # Limpa estados
                     for key in [ACTIVE_GRAPH_KEY, FULL_GRAPH_KEY, 'vertex_names_list', 'name_to_idx_map', 'full_idx_to_name_map']:
                         st.session_state[key] = None if key.endswith('obj') or key.endswith('map') else []
                     return
@@ -84,8 +88,7 @@ def app():
                 else:
                     impl_class = AdjacencyMatrixGraph
                 
-                full_graph = graph_service.build_graph(
-                    impl_class, vertex_count_full, edges)
+                full_graph = graph_service.build_graph(impl_class, vertex_count_full, edges)
 
                 # 3. Armazena o Grafo Completo e o mapeamento completo no Session State
                 st.session_state[FULL_GRAPH_KEY] = full_graph
@@ -129,7 +132,9 @@ def app():
                 new_idx: idx_to_name_full[original_idx] 
                 for new_idx, original_idx in enumerate(indices_to_render_original)
             }
+            # O grafo ativo usa AGORA o novo mapeamento de índices (0, 1, 2...)
             st.session_state.idx_to_name_map = new_idx_to_name_map
+            # indices_to_render_internal agora é uma lista sequencial [0, 1, 2, ..., N-1]
             st.session_state.indices_to_render_internal = list(new_idx_to_name_map.keys())
         else:
             # Caso não haja vértices após a filtragem
@@ -143,6 +148,7 @@ def app():
         indices_to_render_internal = st.session_state.get("indices_to_render_internal", [])
         total_vertex_count = st.session_state.get("total_vertex_count", 0)
 
+        # Se o grafo ativo não for None
         if graph:
             st.success(
                 f"Grafo ativo (filtrado) gerado com sucesso usando: **{type(graph).__name__}**")
@@ -153,56 +159,64 @@ def app():
             # --- RENDERIZAÇÃO EM ABAS ---
             st.divider()
             st.header("Representações do Grafo")
-
-            tab1, tab2, tab3 = st.tabs(
-                ["Visualização", "Lista de Adjacência", "Matriz de Adjacência"])
+            
+            tab1, tab2, tab3 = st.tabs(["Visualização", "Lista de Adjacência", "Matriz de Adjacência"])
 
             with tab1:
                 st.info(f"Visualização do grafo filtrado ({current_vertex_count} de {total_vertex_count} vértices):")
                 
+                # highlight_vertex e highlight_edges devem usar os índices do grafo ATIVO (0..N-1)
                 highlight_vertex = st.session_state.get("new_vertices", set())
-                
+
                 graph_service.draw_graph(
-                    graph, 
-                    idx_to_name, 
-                    indices_to_render_internal, 
+                    graph, # Grafo ATIVO
+                    idx_to_name, # Mapeamento NOVO (0..N-1 -> Nome)
+                    indices_to_render_internal, # Índices [0, 1, 2...]
                     highlight_edges=st.session_state.get("new_edges", set()),
                     highlight_vertex=highlight_vertex
                 )
-            
+
+
             with tab2:
                 st.info(f"Representação (Lista de Adjacência) - {current_vertex_count} vértices no grafo ativo.")
-
+                
                 display_adjacency_lists_streamlit(
                     graph=graph, 
                     idx_to_name=idx_to_name, 
-                    indices_to_render=indices_to_render_internal 
-                )
+                    indices_to_render=indices_to_render_internal)
 
             with tab3:
                 st.info(f"Representação (Matriz de Adjacência) - Matriz de {current_vertex_count}x{current_vertex_count}.")
-
+                
                 matrix_data = graph_service.get_adjacency_matrix()
+                matrix_labels = [idx_to_name.get(i, str(i)) for i in indices_to_render_internal]
                 
-                matrix_labels = [idx_to_name.get(i, str(i))
-                                 for i in indices_to_render_internal]
-                                 
-                df = pd.DataFrame(
-                    matrix_data, columns=matrix_labels, index=matrix_labels)
-                
+                df = pd.DataFrame(matrix_data, columns=matrix_labels, index=matrix_labels)
+
+                # Mostra dataframe
                 st.dataframe(df)
-                
+
+                # Converte para SVG
                 svg = df_to_svg(df)
-                st.download_button("Baixar matriz (SVG)", data=svg.encode("utf-8"), file_name="matriz_fechamento.svg", mime="image/svg+xml")
-        
+                
+                # Botão para baixar
+                st.download_button(
+                    "Baixar matriz (SVG)",
+                    data=svg.encode("utf-8"),
+                    file_name="matriz_reviews.svg",
+                    mime="image/svg+xml",
+                )
+
         else:
              st.warning("Nenhum autor corresponde aos filtros selecionados. Ajuste os filtros.")
-
 
     else:
         st.info("Escolha uma implementação e clique em 'Gerar e Analisar Grafo' para carregar os dados.")
 
+    
+    # --- CHAMA O HELPER DA SIDEBAR ---
     draw_graph_api_sidebar()
+
 
 if __name__ == "__main__":
     app()
