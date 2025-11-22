@@ -1,14 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from typing import List, Tuple, Dict, Any
-
-def build_simple_graph(AdjacencyListGraph, vertex_count: int, edges: List[Tuple[int, int, float]]):
-    """Helper simples para montar a estrutura de lista de adjacência."""
-    graph = AdjacencyListGraph(vertex_count)
-    for u, v, w in edges:
-        graph.addEdge(u, v, w)
-    return graph
+from typing import Dict, Any
 
 def display_structure_results(res: Dict[str, Any]):
     """Desenha os resultados da análise estrutural."""
