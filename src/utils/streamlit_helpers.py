@@ -12,34 +12,38 @@ def draw_graph_api_sidebar():
     Desenha o painel de ferramentas de análise do grafo na sidebar.
     
     Lê os nomes dos vértices do st.session_state e chama o 
-    graph_service para executar a lógica da API.
+    graph_service para executar a lógica da API, traduzindo NOME -> ÍNDICE ATIVO.
     """
-
-    if 'community_results' not in st.session_state:
-        st.session_state.community_results = None
-    if 'centrality_results' not in st.session_state:
-        st.session_state.centrality_results = None
+    if 'new_vertices' not in st.session_state:
+        st.session_state.new_vertices = set()
 
     try:
         if 'graph_obj' not in st.session_state or st.session_state.graph_obj is None:
-             st.sidebar.info("Gere um grafo na página principal para habilitar as ferramentas de análise.")
-             return
+            st.sidebar.info("Gere um grafo na página principal para habilitar as ferramentas de análise.")
+            return
+        
+        graph = st.session_state.graph_obj
     except Exception:
         st.sidebar.info("Gere um grafo na página principal para habilitar as ferramentas de análise.")
         return
 
-    # Recupera os dados de MAPEAMENTO
+    # Recupera os dados de MAPEAMENTO DO GRAFO ATIVO
     try:
         vertex_names = st.session_state.get('vertex_names_list', [])
-        name_to_idx = st.session_state.get('name_to_idx_map', {})
+        idx_to_name_active = st.session_state.get('idx_to_name_map', {}) 
 
-        if not vertex_names or not name_to_idx:
-            st.sidebar.warning("Mapeamento de nomes não encontrado. Usando índices.")
-            vertex_count = graph_service.get_vertex_count() 
-            vertex_names = [str(i) for i in range(vertex_count)]
-            name_to_idx = {str(i): i for i in range(vertex_count)}
-            st.session_state.vertex_names_list = vertex_names
-            st.session_state.name_to_idx_map = name_to_idx
+        name_to_idx_active = {name: idx for idx, name in idx_to_name_active.items()} 
+
+        if not vertex_names or not name_to_idx_active:
+            if graph.getVertexCount() > 0:
+                st.sidebar.warning("Mapeamento de nomes não encontrado. Usando índices padrões.")
+                vertex_count = graph.getVertexCount() 
+                vertex_names = [str(i) for i in range(vertex_count)]
+                name_to_idx_active = {str(i): i for i in range(vertex_count)}
+                idx_to_name_active = {i: str(i) for i in range(vertex_count)}
+            else:
+                st.sidebar.warning("O grafo ativo não contém vértices.")
+                return
 
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar mapeamento de nomes: {e}")
@@ -47,53 +51,40 @@ def draw_graph_api_sidebar():
 
     st.sidebar.divider()
     st.sidebar.header("Ferramentas de Análise")
-    st.sidebar.caption(f"Analisando: {type(st.session_state.graph_obj).__name__}")
+    st.sidebar.caption(f"Analisando: {type(graph).__name__} (Filtrado)")
 
     # --- Expander 1: Propriedades Gerais ---
-    propriedades_gerais(vertex_names)
+    propriedades_gerais()
 
     # --- Expander 2: Análise de Vértice ---
-    analise_vertices(vertex_names,name_to_idx)
+    analise_vertices(vertex_names, name_to_idx_active) 
     
     # --- Expander 3: Análise de Aresta (u, v) ---
-    analise_arestas(vertex_names, name_to_idx)
+    analise_arestas(vertex_names, name_to_idx_active) 
 
-    # --- Expander 4: Convergência / Divergência ---
-    convergencia_divergencia(vertex_names,name_to_idx)
+    # --- Expander 4: Convergência / Divergência (2 Arestas) ---
+    convergencia_divergencia(vertex_names, name_to_idx_active) 
 
     # --- Expander 5: Modificar Grafo ---
-    modificar_grafo(vertex_names, name_to_idx)
+    modificar_grafo(vertex_names, name_to_idx_active, idx_to_name_active) 
 
     # --- Expander 6: Exportar Grafo ---
     exportar_grafo()
 
-    # --- Expander 6: Métricas de Centralidade ---
-    metricas_centralidade()
 
-    # --- Expander 7: Métricas de Comunidade ---
-    metricas_comunidade()
-
-
-def propriedades_gerais(vertex_names):
-    indices_to_render = st.session_state.get("indices_to_render_internal")
-    graph = st.session_state.get("graph_obj")
-    
+def propriedades_gerais():
+    """ Exibe métricas gerais do grafo ATIVO (filtrado). """
     with st.sidebar.expander("Propriedades Gerais", expanded=True):
         try:
-            if indices_to_render and len(indices_to_render) > 0:
-                filtered_edge_count = 0
-                if graph:
-                    adj_list = graph_service.get_adjacency_list() # Obtém a lista de adjacência do grafo completo
-                    # Itera sobre a lista de adjacência completa, mas conta arestas apenas se ambos os vértices (origem e destino) estiverem no conjunto filtrado
-                    for u_idx, neighbors in enumerate(adj_list):
-                        if u_idx in indices_to_render: # Verifica se o vértice de origem faz parte do filtro
-                            # Itera apenas as chaves (índices dos vizinhos) do dicionário de adjacência
-                            for v_idx in neighbors.keys():
-                                if v_idx in indices_to_render: # Verifica se o vizinho v_idx também faz parte do filtro
-                                    filtered_edge_count += 1       
+            # Todas estas funções operam no grafo ATIVO (graph_obj)
+            v_count = graph_service.get_vertex_count()
+            e_count = graph_service.get_edge_count()
+            
+            # Recupera a contagem total de vértices do grafo COMPLETO para contexto
+            total_v_count = st.session_state.get("total_vertex_count", v_count)
 
-            st.metric("Vértices", len(vertex_names))
-            st.metric("Arestas", filtered_edge_count)
+            st.metric("Vértices (Ativo)", f"{v_count}")
+            st.metric("Arestas (Ativo)", e_count)
             
             col1, col2 = st.columns(2)
             col1.metric("É Conexo?", "Sim" if graph_service.is_connected() else "Não")
@@ -103,6 +94,7 @@ def propriedades_gerais(vertex_names):
             st.error(f"Erro na API: {e}")
 
 def analise_vertices(vertex_names, name_to_idx):
+    """ Analisa um vértice individualmente no grafo ATIVO. """
     with st.sidebar.expander("Análise de Vértice"):
         selected_v_name = st.selectbox(
             "Selecione um Vértice (v):",
@@ -111,79 +103,111 @@ def analise_vertices(vertex_names, name_to_idx):
         )
         if selected_v_name:
             try:
+                # O índice é o ATIVO (0..N-1), obtido do mapa name_to_idx_active
                 v_idx = name_to_idx[selected_v_name]
                 st.metric("Grau de Entrada (In)", graph_service.get_vertex_in_degree(v_idx))
                 st.metric("Grau de Saída (Out)", graph_service.get_vertex_out_degree(v_idx))
                 st.metric("Peso do Vértice", f"{graph_service.get_vertex_weight(v_idx):.2f}")
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro ao obter dados para {selected_v_name}: {e}")
 
 def analise_arestas(vertex_names, name_to_idx):
+    """ Analisa a relação (u, v) no grafo ATIVO. """
     with st.sidebar.expander("Análise de Aresta (u, v)"):
         u_name = st.selectbox("Vértice de Origem (u):", vertex_names, key="sidebar_u_edge")
         v_name = st.selectbox("Vértice de Destino (v):", vertex_names, key="sidebar_v_edge")
         
         if st.button("Analisar Relação (u, v)", key="sidebar_check_edge"):
             try:
+                # Os índices são os ATIVOS (0..N-1)
                 u_idx = name_to_idx[u_name]
                 v_idx = name_to_idx[v_name]
 
-                if graph_service.is_successor(u_idx, v_idx):
+                if graph_service.has_edge(u_idx, v_idx):
                     weight = graph_service.get_edge_weight(u_idx, v_idx)
-                    st.success(f"Sim, (u, v) existe (Peso: {weight:.1f}).")
+                    st.success(f"Sim, ({u_name}, {v_name}) existe (Peso: {weight:.1f}).")
                 else:
-                    st.error("Não, (u, v) não existe.")
+                    st.error(f"Não, ({u_name}, {v_name}) não existe.")
 
-                if graph_service.is_predecessor(u_idx, v_idx):
-                    st.info(f"Sim, (v, u) existe (v é predecessor).")
+                # Verifica aresta inversa
+                if graph_service.has_edge(v_idx, u_idx):
+                    weight_inv = graph_service.get_edge_weight(v_idx, u_idx)
+                    st.info(f"Sim, ({v_name}, {u_name}) existe (Peso: {weight_inv:.1f}).")
                 else:
-                    st.info("Não, (v, u) não existe.")
+                    st.info(f"Não, ({v_name}, {u_name}) não existe.")
+
             except Exception as e:
-                    st.error(f"Erro: {e}")
+                st.error(f"Erro: {e}")
 
 def convergencia_divergencia(vertex_names, name_to_idx):
+    """ 
+    Verifica se as arestas (u1, v1) e (u2, v2) são convergentes ou divergentes,
+    seguindo a definição formal da API (AbstractGraph) de 4 vértices.
+    """
     with st.sidebar.expander("Convergência / Divergência"):
-        st.markdown("Aresta 1: (u1, v1)")
-        u1_name = st.selectbox("Vértice (u1):", vertex_names, key="sidebar_u1")
-        v1_name = st.selectbox("Vértice (v1):", vertex_names, key="sidebar_v1")
+        st.markdown("--- Aresta 1 (u1, v1) ---")
+        u1_name = st.selectbox("Vértice Origem (u1):", vertex_names, key="sidebar_u1")
+        v1_name = st.selectbox("Vértice Destino (v1):", vertex_names, key="sidebar_v1")
         
-        st.markdown("Aresta 2: (u2, v2)")
-        u2_name = st.selectbox("Vértice (u2):", vertex_names, key="sidebar_u2")
-        v2_name = st.selectbox("Vértice (v2):", vertex_names, key="sidebar_v2")
+        st.markdown("--- Aresta 2 (u2, v2) ---")
+        u2_name = st.selectbox("Vértice Origem (u2):", vertex_names, key="sidebar_u2")
+        v2_name = st.selectbox("Vértice Destino (v2):", vertex_names, key="sidebar_v2")
 
-        if st.button("Verificar", key="sidebar_check_conv_div"):
-            if not (u1_name and v1_name and u2_name and v2_name):
-                st.warning("Selecione os 4 vértices.")
-            else:
-                try:
-                    u1 = name_to_idx[u1_name]
-                    v1 = name_to_idx[v1_name]
-                    u2 = name_to_idx[u2_name]
-                    v2 = name_to_idx[v2_name]
-
-                    if graph_service.is_divergent(u1, v1, u2, v2):
-                        st.info(f"**Divergente**: Saem de '{u1_name}'.")
-                    else:
-                        st.info("Não são divergentes.")
-                        
-                    if graph_service.is_convergent(u1, v1, u2, v2):
-                        st.success(f"**Convergente**: Chegam em '{v1_name}'.")
-                    else:
-                        st.info("Não são convergentes.")
-                except Exception as e:
-                        st.error(f"Erro: {e}")
+        if st.button("Verificar Relações", key="sidebar_check_cd"):
+            if not all([u1_name, v1_name, u2_name, v2_name]):
+                st.warning("Selecione os 4 vértices para definir as duas arestas.")
+                return
+            
+            try:
+                # Obter índices ativos
+                u1 = name_to_idx[u1_name]
+                v1 = name_to_idx[v1_name]
+                u2 = name_to_idx[u2_name]
+                v2 = name_to_idx[v2_name]
                 
-def modificar_grafo(vertex_names, name_to_idx):
-     with st.sidebar.expander("Modificar Grafo"):
+                # Checar se as arestas existem primeiro para dar feedback claro
+                edge1_exists = graph_service.has_edge(u1, v1)
+                edge2_exists = graph_service.has_edge(u2, v2)
+                
+                if not edge1_exists or not edge2_exists:
+                    msg = "Relação inválida: "
+                    if not edge1_exists:
+                        msg += f"A aresta ({u1_name}, {v1_name}) não existe. "
+                    if not edge2_exists:
+                        msg += f"A aresta ({u2_name}, {v2_name}) não existe."
+                    st.error(msg)
+                    return
+
+                # --- Chamada à API de 4 vértices ---
+                
+                # 1. Divergência: Verifica se as arestas saem do mesmo nó (u1 = u2)
+                if graph_service.is_divergent(u1, v1, u2, v2):
+                    st.info(f"**Divergente:** Ambas as arestas saem do nó **{u1_name}**.")
+                else:
+                    st.info("As arestas NÃO são divergentes (não compartilham origem ou são idênticas).")
+
+                # 2. Convergência: Verifica se as arestas chegam no mesmo nó (v1 = v2)
+                if graph_service.is_convergent(u1, v1, u2, v2):
+                    st.success(f"**Convergente:** Ambas as arestas chegam no nó **{v1_name}**.")
+                else:
+                    st.success("As arestas NÃO são convergentes (não compartilham destino ou são idênticas).")
+
+            except Exception as e:
+                st.error(f"Erro: {e}")
+                
+def modificar_grafo(vertex_names, name_to_idx, idx_to_name):
+    """ Controles para modificar o grafo ATIVO (Adicionar/Remover Arestas/Vértices). """
+    with st.sidebar.expander("Modificar Grafo"):
         st.warning("Modificações afetam o grafo em memória.")
 
         _add_edge(vertex_names, name_to_idx)
 
         _remove_edge(vertex_names, name_to_idx)
 
-        _add_vertex(vertex_names)
+        _add_vertex(idx_to_name)
 
 def exportar_grafo():
+    """ Exporta o grafo ATIVO para GEXF. """
     with st.sidebar.expander("Exportar Grafo"):
         export_dir = "exports"
         if not os.path.exists(export_dir):
@@ -193,200 +217,22 @@ def exportar_grafo():
                 st.error(f"Não foi possível criar diretório 'exports': {e}")
                 return
 
-        filename = st.text_input("Nome do Arquivo:", "meu_grafo.gexf")
+        filename = st.text_input("Nome do Arquivo:", "meu_grafo_ativo.gexf")
         
         if st.button("Exportar para GEXF (Gephi)"):
             try:
                 full_path = os.path.join(export_dir, filename)
-                graph_service.export_to_gephi(full_path)
+                # Exporta o grafo ATIVO
+                graph_service.export_to_gephi(full_path) 
                 st.success(f"Grafo salvo em: {full_path}")
             except Exception as e:
                 st.error(f"Erro ao exportar: {e}")
 
-def metricas_centralidade():
-    with st.sidebar.expander("Métricas de Centralidade"):
-        try:
-            metric_choice = st.selectbox(
-                "Escolha a métrica ponderada:",
-                (
-                    "Degree (weighted)",
-                    "Betweenness (weighted)",
-                    "PageRank",
-                    "Eigenvector Centrality",
-                ),
-            )
-
-            top_n = st.number_input("Top N (0 = todos)", min_value=0, value=10, step=1)
-
-            degree_mode = st.selectbox("Modo (Degree)", ("total", "out", "in"))
-
-            damping = st.slider("Damping (PageRank)", min_value=0.0, max_value=1.0, value=0.85)
-            pr_iters = st.number_input("Iterações (PageRank)", min_value=10, value=100, step=10)
-            eig_iters = st.number_input("Iterações (Eigenvector)", min_value=10, value=100, step=10)
-
-            st.markdown("---")
-            st.markdown("**Interpretação rápida:** métricas ponderadas usam os pesos definidos no projeto (COMMENT_PR_ISSUE=2, OPENED_ISSUE_COMMENTED=3, REVIEW/APPROVED=4, MERGE=5). Use Top N para limitar a visualização.")
-
-            if st.button("Calcular Métrica"):
-                try:
-                    adj_list = graph_service.get_adjacency_list()
-                    n = len(adj_list)
-                    out_adj: List[List[Tuple[int, float]]] = [ [(v, float(w)) for v, w in nbrs.items()] for nbrs in adj_list ]
-                    in_adj: List[List[Tuple[int, float]]] = [[] for _ in range(n)]
-                    for u, nbrs in enumerate(out_adj):
-                        for v, w in nbrs:
-                            in_adj[v].append((u, w))
-
-                    if metric_choice == "Degree (weighted)":
-                        scores = centrality_metrics.degree_centrality(out_adj, in_adj, weighted=True, mode=degree_mode)
-                        expl = "Degree: soma dos pesos das arestas (modo selecionado)."
-                    elif metric_choice == "Betweenness (weighted)":
-                        scores = centrality_metrics.betweenness_centrality_weighted(out_adj)
-                        expl = "Betweenness: contribuição em caminhos mínimos ponderados."
-                    elif metric_choice == "PageRank":
-                        scores = centrality_metrics.pagerank(out_adj, damping=damping, max_iter=pr_iters)
-                        expl = "PageRank: importância distribuída via arestas ponderadas (iteração de potência)."
-                    elif metric_choice == "Eigenvector Centrality":
-                        scores = centrality_metrics.eigenvector_centrality(out_adj, in_adj, max_iter=int(eig_iters))
-                        expl = "Eigenvector: influência considerando a importância dos vizinhos (autovetor)."
-                    else:
-                        st.error("Métrica desconhecida")
-                        scores = {}
-                        expl = ""
-
-                    items = sorted(scores.items(), key=lambda it: it[1], reverse=True)
-                    if top_n > 0:
-                        items = items[:top_n]
-
-                    names_map = st.session_state.get('idx_to_name_map') or st.session_state.get('idx_to_name', {})
-                    df = pd.DataFrame([{'Rank': i+1, 'Author': names_map.get(idx, str(idx)), 'Score': float(score)} for i, (idx, score) in enumerate(items)])
-
-                    st.subheader(f"Resultados — {metric_choice}")
-                    st.write(expl)
-                    st.table(df)
-
-                    if not df.empty:
-                        chart = alt.Chart(df).mark_bar().encode(
-                            x=alt.X('Score:Q'),
-                            y=alt.Y('Author:N', sort='-x'),
-                            tooltip=['Author', 'Score']
-                        ).properties(height=40 * len(df))
-                        st.altair_chart(chart, use_container_width=True)
-
-                    import io, csv
-                    buf = io.StringIO()
-                    writer = csv.writer(buf)
-                    writer.writerow(['rank', 'author', 'score'])
-                    for _, row in df.iterrows():
-                        writer.writerow([int(row['Rank']), row['Author'], float(row['Score'])])
-                    st.download_button('Baixar CSV', data=buf.getvalue().encode('utf-8'), file_name='metric_results.csv', mime='text/csv')
-
-                except Exception as e:
-                    st.error(f"Falha ao calcular métrica: {e}")
-        except Exception as e:
-            st.error(f"Erro preparando a UI de métricas: {e}")
-
-def metricas_comunidade():
-    with st.sidebar.expander("Métricas de Comunidade"):
-        with st.form("community_metrics_form"):
-            max_splits = st.number_input("Max Divisões (G-N)", min_value=1, value=5, step=1, key="form_comm_max_splits")
-
-            comm_metric_choice = st.selectbox(
-                "Escolha a métrica:",
-                ("Community Detection (Girvan-Newman)", "Bridging Ties"),
-                key="form_comm_choice"
-            )
-
-            st.markdown("---")
-            st.markdown("**Interpretação rápida:** O **Girvan-Newman** (baseado em Betweenness Centrality) é não-ponderado e remove as arestas de maior intermediação para encontrar comunidades. O número de divisões afeta a granularidade.")
-
-            submitted = st.form_submit_button("Calcular Comunidade")
-            
-            if submitted:
-                # O cálculo só ocorre quando o botão do formulário é clicado
-                try:
-                    # 1. Pré-cálculo das Listas de Adjacência
-                    adj_list = graph_service.get_adjacency_list()
-                    n = len(adj_list)
-                    out_adj: List[List[Tuple[int, float]]] = [ [(v, float(w)) for v, w in nbrs.items()] for nbrs in adj_list ]
-
-                    names_map = st.session_state.get('idx_to_name_map') or st.session_state.get('idx_to_name', {})
-                    
-                    # 2. Lógica de Cálculo
-                    if comm_metric_choice == "Community Detection (Girvan-Newman)":
-                        communities = community_metrics.girvan_newman_community_detection(out_adj, max_splits=int(max_splits))
-                        expl = f"Comunidades encontradas após divisões (máximo {max_splits} remoções de arestas)."
-                        
-                        data = []
-                        for i, community in enumerate(communities):
-                            community_members = ", ".join([names_map.get(node_idx, str(node_idx)) for node_idx in community])
-                            data.append({
-                                'Comunidade': i + 1,
-                                'Tamanho': len(community),
-                                'Membros': community_members
-                            })
-                        
-                        df = pd.DataFrame(data)
-                        
-                        # 3. Armazena os resultados no estado da sessão
-                        st.session_state.community_results = {
-                            'metric': comm_metric_choice,
-                            'expl': expl,
-                            'df': df,
-                            'is_bridge': False
-                        }
-
-                    elif comm_metric_choice == "Bridging Ties":
-                        communities = community_metrics.girvan_newman_community_detection(out_adj, max_splits=int(max_splits))
-                        bridging_ties = community_metrics.find_bridging_ties(out_adj, communities)
-                        expl = f"Arestas de ponte que conectam as {len(communities)} comunidades encontradas."
-                        
-                        data = []
-                        for u, v, w in bridging_ties:
-                            data.append({
-                                'Origem': names_map.get(u, str(u)),
-                                'Destino': names_map.get(v, str(v)),
-                                'Peso': float(w)
-                            })
-                        
-                        df = pd.DataFrame(data).sort_values(by='Peso', ascending=False)
-                        
-                        # 3. Armazena os resultados no estado da sessão
-                        st.session_state.community_results = {
-                            'metric': comm_metric_choice,
-                            'expl': expl,
-                            'df': df,
-                            'is_bridge': True
-                        }
-                    
-                    st.toast('Cálculo de comunidade finalizado!', icon='✅')
-
-                except Exception as e:
-                    st.error(f"Falha ao calcular métrica de comunidade: {e}")
-                    st.exception(e)
-                    st.session_state.community_results = None
-
-        # 4. Exibição dos resultados (fora do formulário)
-        if st.session_state.community_results:
-            res = st.session_state.community_results
-            st.markdown("### Resultados (Último Cálculo)")
-            st.write(res['expl'])
-            
-            if res['is_bridge']:
-                st.subheader(f"{res['metric']} (Total: {len(res['df'])})")
-                top_n_bridge = st.number_input("Top N Arestas de Ponte", min_value=0, value=10, step=1, key="bridge_top_n_display")
-                if top_n_bridge > 0:
-                    df_display = res['df'].head(top_n_bridge)
-                else:
-                    df_display = res['df']
-                st.table(df_display)
-            else:
-                st.subheader(f"{res['metric']} (Total: {len(res['df'])})")
-                st.table(res['df'])
-
 def _add_edge(vertex_names, name_to_idx):
+    """ Adiciona ou atualiza uma aresta usando índices ATIVOS. """
     with st.form("form_add_edge"):
         st.subheader("Adicionar / Atualizar Aresta")
+        # Usa vertex_names (nomes dos vértices ativos)
         u_name_add = st.selectbox("Origem (u):", vertex_names, key="sb_u_add")
         v_name_add = st.selectbox("Destino (v):", vertex_names, key="sb_v_add")
         weight_add = st.number_input("Peso:", min_value=0.1, value=1.0, step=0.1)
@@ -394,32 +240,40 @@ def _add_edge(vertex_names, name_to_idx):
         submitted_add = st.form_submit_button("Adicionar/Atualizar Aresta")
         if submitted_add:
             try:
+                # Converte Nome para Índice ATIVO
                 u = name_to_idx[u_name_add]
                 v = name_to_idx[v_name_add]
+                
+                # A função graph_service.add_edge opera no grafo ATIVO (índices 0..N-1)
                 graph_service.add_edge(u, v, weight_add)
 
-                # Atualiza highlight
+                # Atualiza highlight (usa índices ATIVOS)
                 st.session_state["last_added_edge"] = (u, v)
-                st.session_state["last_added_vertex"] = None  # ou destaque algum vértice se quiser
+                st.session_state["last_added_vertex"] = None
 
-                st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada com peso {weight_add}.")
+                st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada/atualizada com peso {weight_add}.")
                 st.rerun() 
             except Exception as e:
                 st.error(f"Erro ao adicionar aresta: {e}")
 
 def _remove_edge(vertex_names, name_to_idx):
-     with st.form("form_remove_edge"):
+    """ Remove uma aresta usando índices ATIVOS. """
+    with st.form("form_remove_edge"):
         st.subheader("Remover Aresta")
+        # Usa vertex_names (nomes dos vértices ativos)
         u_name_rem = st.selectbox("Origem (u):", vertex_names, key="sb_u_rem")
         v_name_rem = st.selectbox("Destino (v):", vertex_names, key="sb_v_rem")
         
         submitted_rem = st.form_submit_button("Remover Aresta")
         if submitted_rem:
             try:
+                # Converte Nome para Índice ATIVO
                 u = name_to_idx[u_name_rem]
                 v = name_to_idx[v_name_rem]
+                
+                # A função graph_service.remove_edge opera no grafo ATIVO
                 if not graph_service.has_edge(u, v):
-                    st.warning("Aresta já não existe.")
+                    st.warning(f"Aresta ({u_name_rem}, {v_name_rem}) já não existe no grafo ativo.")
                 else:
                     graph_service.remove_edge(u, v)
                     st.success(f"Aresta ({u_name_rem}, {v_name_rem}) removida.")
@@ -427,7 +281,8 @@ def _remove_edge(vertex_names, name_to_idx):
             except Exception as e:
                 st.error(f"Erro ao remover aresta: {e}")
 
-def _add_vertex(vertex_names):
+def _add_vertex(idx_to_name):
+    """ Adiciona um vértice ao grafo ATIVO. """
     with st.form("form_add_vertex"):
         st.subheader("Adicionar Vértice")
         vertex_name_input = st.text_input(
@@ -439,25 +294,26 @@ def _add_vertex(vertex_names):
         
         if submitted_add_vertex:
             try:
-                graph = st.session_state.graph_obj
-                new_index = graph.addVertex()  # índice único
+                # 1. Adiciona o vértice no grafo ATIVO. Ele retorna o NOVO índice ATIVO.
+                new_active_index = graph_service.add_vertex()
 
-                # Nome do vértice
-                vertex_name = vertex_name_input.strip() or f"Novo_{new_index}"
-                st.session_state.idx_to_name_map[new_index] = vertex_name
+                # 2. Nome do vértice
+                vertex_name = vertex_name_input.strip() or f"Novo_{new_active_index}"
+                
+                # 3. Atualiza os mapeamentos do grafo ATIVO
+                # name_to_idx_map: Nome -> Índice ATIVO (necessário para os selects)
+                st.session_state.name_to_idx_map[vertex_name] = new_active_index
+                # idx_to_name_map: Índice ATIVO -> Nome (passado como argumento)
+                idx_to_name[new_active_index] = vertex_name
+                
+                # Adiciona o nome à lista de nomes (vertex_names_list)
                 st.session_state.vertex_names_list.append(vertex_name)
 
-                # ===== Mantém todos os novos vértices =====
-               # Adiciona para destaque
-                if "new_vertices" not in st.session_state:
-                    st.session_state.new_vertices = set()
-                st.session_state.new_vertices.add(new_index)
+                # 4. Adiciona ao conjunto de 'new_vertices' (índice ATIVO) para destaque
+                st.session_state.new_vertices.add(new_active_index)
+                st.session_state.last_added_vertex = new_active_index
 
-                # Ainda pode manter last_added_vertex para foco imediato
-                st.session_state.last_added_vertex = new_index
-
-                st.success(f"Vértice '{vertex_name}' adicionado com sucesso! (Índice: {new_index})")
+                st.success(f"Vértice '{vertex_name}' adicionado com sucesso! (Índice Ativo: {new_active_index})")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao adicionar vértice: {e}")
-

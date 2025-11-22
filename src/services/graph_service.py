@@ -181,13 +181,13 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
  
     st.subheader("Visualização Gráfica")
 
-    graph = _get_graph_from_session()
 
     if not indices_to_render:
         st.warning("Nenhum autor corresponde aos filtros selecionados.")
         return
 
-    n = len(indices_to_render)
+    n = graph.getVertexCount() 
+    subgraph_indices = range(n)
 
     # ================= PARÂMETROS DE REPULSÃO =================
     area = 2000000               
@@ -199,17 +199,17 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
     attraction_factor = 0.4     
 
     # ================= INICIALIZAÇÃO =================
-    positions = {i: [random.uniform(-k, k), random.uniform(-k, k)] for i in indices_to_render}
+    positions = {i: [random.uniform(-k, k), random.uniform(-k, k)] for i in subgraph_indices}
 
     # ================= SIMULAÇÃO =================
     progress_bar = st.progress(0, text="Calculando...")
     for iter_num in range(iterations):
-        disp = {i: [0.0, 0.0] for i in indices_to_render}
+        disp = {i: [0.0, 0.0] for i in subgraph_indices}
 
         # Repulsão
-        for i, v in enumerate(indices_to_render):
+        for i, v in enumerate(subgraph_indices):
             for j in range(i + 1, n):
-                u = indices_to_render[j]
+                u = subgraph_indices[j]
                 dx = positions[v][0] - positions[u][0]
                 dy = positions[v][1] - positions[u][1]
                 dist = math.sqrt(dx * dx + dy * dy) + 0.01
@@ -220,9 +220,9 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
                 disp[u][1] -= (dy / dist) * force
 
         # Atração 
-        for u in indices_to_render:
-            for v in indices_to_render:
-                if graph.hasEdge(u, v):
+        for u in subgraph_indices:
+            for v in subgraph_indices:
+                if graph.hasEdge(u, v): 
                     dx = positions[u][0] - positions[v][0]
                     dy = positions[u][1] - positions[v][1]
                     dist = math.sqrt(dx * dx + dy * dy) + 0.01
@@ -233,7 +233,7 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
                     disp[v][1] += (dy / dist) * force
 
         # Atualiza posições
-        for v in indices_to_render:
+        for v in subgraph_indices:
             dx, dy = disp[v]
             dist = math.sqrt(dx * dx + dy * dy)
             if dist > 0:
@@ -248,12 +248,12 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
     progress_bar.empty()
 
     # Normalização
-    xs = [positions[i][0] for i in indices_to_render]
-    ys = [positions[i][1] for i in indices_to_render]
+    xs = [positions[i][0] for i in subgraph_indices]
+    ys = [positions[i][1] for i in subgraph_indices]
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
     scale = 10
-    for i in indices_to_render:
+    for i in subgraph_indices:
         positions[i][0] = (positions[i][0] - (min_x + max_x) / 2) * scale
         positions[i][1] = (positions[i][1] - (min_y + max_y) / 2) * scale
 
@@ -263,15 +263,13 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
     plt.axis("off")
 
     # Arestas
-    
-    for u in indices_to_render:
-        for v in indices_to_render:
+    for u in subgraph_indices:
+        for v in subgraph_indices:
             if graph.hasEdge(u, v):
 
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
 
-                # Destaque da aresta recém-adicionada
                 if (u, v) in highlight_edges or (v, u) in highlight_edges:
                     color = "red"
                     alpha = 0.9
@@ -301,11 +299,11 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
                 )
 
     # Nós
-    highlight_vertex = st.session_state.get("new_vertices", set())
+    highlight_vertex = st.session_state.get("new_vertices", set()) 
 
-    # Dentro do loop que desenha os nós
-    for i in indices_to_render:
+    for i in subgraph_indices:
         x, y = positions[i]
+        
         if i in highlight_vertex:
             node_color = "yellow"
             node_size = 260
@@ -336,3 +334,36 @@ def build_graph(impl_class: type[AbstractGraph], vertex_count: int, edges: list[
     for u_idx, v_idx, weight in edges:
         graph.addEdge(u_idx, v_idx, weight)
     return graph
+
+def build_filtered_graph(full_graph: AbstractGraph, indices_to_include: list[int]) -> AbstractGraph:
+    """
+    Constrói um NOVO grafo (subgrafo) contendo apenas os vértices 
+    e arestas que conectam os vértices presentes em indices_to_include.
+
+    O mapeamento de índices é feito internamente: 
+    o índice original (do full_graph) é remapeado para um índice sequencial (0 a N-1) 
+    no novo subgrafo.
+    """
+    # 1. Obtém a classe de implementação (AdjacencyListGraph ou AdjacencyMatrixGraph)
+    impl_class = type(full_graph)
+    
+    # 2. Mapeamento do índice original (completo) para o novo índice (filtrado)
+    old_to_new_idx = {old_idx: new_idx for new_idx, old_idx in enumerate(indices_to_include)}
+    new_vertex_count = len(indices_to_include)
+    
+    # 3. Cria uma nova instância do grafo (filtrado)
+    subgraph = impl_class(new_vertex_count)
+    
+    # 4. Transfere arestas
+    for u_old in indices_to_include:
+        u_new = old_to_new_idx[u_old]
+        
+        for v_old in indices_to_include:
+            if full_graph.hasEdge(u_old, v_old):
+                v_new = old_to_new_idx[v_old]
+                weight = full_graph.getEdgeWeight(u_old, v_old)
+                
+                # Adiciona a aresta ao novo subgrafo
+                subgraph.addEdge(u_new, v_new, weight)
+                
+    return subgraph
