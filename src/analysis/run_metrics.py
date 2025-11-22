@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from src.utils.neo4j_connector import get_neo4j_service
-from src.pages._shared_queries import fetch_authors_and_edges
-from src.analysis.metrics import (
+from src.services.shared_queries import fetch_authors_and_edges
+from src.analysis.centrality_metrics import (
     build_adjlists,
     degree_centrality,
     betweenness_centrality,
