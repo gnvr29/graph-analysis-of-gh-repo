@@ -16,8 +16,8 @@ REL_APPROVED = "APPROVED"
 REL_MERGED = "MERGED"
 
 WEIGHTS = {
-    "COMMENT": 2,
-    "ISSUE_COMMENTED": 3, # ! TODO - LEMBRAR DE TIRAR
+    "COMMENT_PR_ISSUE": 2,
+    "OPENED_ISSUE_COMMENTED": 3,
     "REVIEW/APPROVED": 4,
     "MERGE": 5,
     "ISSUE_CLOSED": 1,
@@ -124,7 +124,7 @@ def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled
     Busca no Neo4j e retorna arestas separadas por tipo de relação,
     incluindo apenas os tipos especificados.
 
-    Chaves: 'COMMENT', 'ISSUE_COMMENTED', 'REVIEW', 'MERGE'.
+    Chaves: 'COMMENT', 'ISSUE_COMMENTED', 'REVIEW', 'APPROVED', 'MERGE', 'ISSUE_CLOSED'.
 
     Valores: listas de pares (u_index, v_index).
     """
@@ -138,7 +138,6 @@ def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled
             if src in id_to_index and dst in id_to_index:
                 edges["COMMENT"].append((id_to_index[src], id_to_index[dst]))
 
-    # ! TODO VER SE PRECISA TIRAR
     if "ISSUE_COMMENTED" in enabled_interaction_types:
         # Issues comentadas por outro usuário
         rows = neo4j_service.query(ISSUE_COMMENTED_BY_OTHER_QUERY)

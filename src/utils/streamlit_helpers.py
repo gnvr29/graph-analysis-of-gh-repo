@@ -210,7 +210,7 @@ def metricas_centralidade():
             eig_iters = st.number_input("Iterações (Eigenvector)", min_value=10, value=100, step=10)
 
             st.markdown("---")
-            st.markdown("**Interpretação rápida:** métricas ponderadas usam os pesos definidos no projeto (COMMENT=2, ISSUE_COMMENTED=3, REVIEW=4, MERGE=5). Use Top N para limitar a visualização.")
+            st.markdown("**Interpretação rápida:** métricas ponderadas usam os pesos definidos no projeto (COMMENT_PR_ISSUE=2, OPENED_ISSUE_COMMENTED=3, REVIEW/APPROVED=4, MERGE=5). Use Top N para limitar a visualização.")
 
             if st.button("Calcular Métrica"):
                 try:
