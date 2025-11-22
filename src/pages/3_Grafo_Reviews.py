@@ -65,7 +65,7 @@ def app():
     if st.button("Gerar e Analisar Grafo"):
         with st.spinner("Buscando dados e construindo grafo..."):
             try:
-                idx_to_name, edges = fetch_authors_and_edges(neo4j_service, enabled_interaction_types={"REVIEW"})
+                idx_to_name, edges = fetch_authors_and_edges(neo4j_service, enabled_interaction_types={"REVIEW", "APPROVED", "MERGED"})
                 if not idx_to_name:
                     st.warning("Nenhum nó (:Author) encontrado no Neo4j.")
                     st.session_state.graph_obj = None

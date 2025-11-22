@@ -12,11 +12,13 @@ REL_CREATED = "CREATED"
 REL_PERFORMED_REVIEW = "PERFORMED_REVIEW"
 REL_HAS_REVIEW = "HAS_REVIEW"
 REL_CLOSED = "CLOSED"
+REL_APPROVED = "APPROVED" 
+REL_MERGED = "MERGED"
 
 WEIGHTS = {
     "COMMENT": 2,
-    "ISSUE_COMMENTED": 3,
-    "REVIEW": 4,
+    "ISSUE_COMMENTED": 3, # ! TODO - LEMBRAR DE TIRAR
+    "REVIEW/APPROVED": 4,
     "MERGE": 5,
     "ISSUE_CLOSED": 1,
 }
@@ -43,19 +45,26 @@ WHERE src <> dst
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
-PR_REVIEW_APPROVAL_QUERY = f"""
-MATCH (src:{LABEL_AUTHOR})-[:{REL_PERFORMED_REVIEW}|REVIEWED|APPROVED]->(r:{LABEL_REVIEW})
-MATCH (pr:{LABEL_PR})-[:{REL_HAS_REVIEW}|REVIEWS|FOR]->(r)
-MATCH (pr)<-[:{REL_CREATED}|OPENED]-(dst:{LABEL_AUTHOR})
+APPROVED_OTHER_PR_QUERY = f"""
+MATCH (src:{LABEL_AUTHOR})-[:{REL_APPROVED}]->(pr:{LABEL_PR})
+MATCH (dst:{LABEL_AUTHOR})-[:{REL_CREATED}]->(pr)
 WHERE src <> dst
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
-PR_MERGE_QUERY = f"""
-MATCH (src:{LABEL_AUTHOR})-[:{REL_PERFORMED_REVIEW}|REVIEWED|APPROVED]->(r:{LABEL_REVIEW})
-MATCH (pr:{LABEL_PR})-[:{REL_HAS_REVIEW}|REVIEWS|FOR]->(r)
-MATCH (pr)<-[:{REL_CREATED}|OPENED]-(dst:{LABEL_AUTHOR})
-WHERE src <> dst AND pr.mergedAt IS NOT NULL
+REVIEW_ON_OTHER_PR_QUERY = f"""
+MATCH (src:{LABEL_AUTHOR})-[:{REL_PERFORMED_REVIEW}]->(review:{LABEL_REVIEW})
+MATCH (pr:{LABEL_PR})-[:{REL_HAS_REVIEW}]->(review)
+MATCH (dst:{LABEL_AUTHOR})-[:{REL_CREATED}]->(pr)
+WHERE src <> dst
+RETURN id(src) AS srcId, coalesce(src.login, toString(id(src))) AS reviewerName,
+       id(dst) AS dstId, coalesce(dst.login, toString(id(dst))) AS prAuthorName
+"""
+
+MERGED_OTHER_PR_QUERY = f"""
+MATCH (src:{LABEL_AUTHOR})-[:{REL_MERGED}]->(pr:{LABEL_PR})
+MATCH (dst:{LABEL_AUTHOR})-[:{REL_CREATED}]->(pr)
+WHERE src <> dst
 RETURN id(src) AS srcId, id(dst) AS dstId
 """
 
@@ -129,6 +138,7 @@ def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled
             if src in id_to_index and dst in id_to_index:
                 edges["COMMENT"].append((id_to_index[src], id_to_index[dst]))
 
+    # ! TODO VER SE PRECISA TIRAR
     if "ISSUE_COMMENTED" in enabled_interaction_types:
         # Issues comentadas por outro usuário
         rows = neo4j_service.query(ISSUE_COMMENTED_BY_OTHER_QUERY)
@@ -138,16 +148,24 @@ def fetch_edges_by_relation(neo4j_service, id_to_index: Dict[int, int],  enabled
                 edges["ISSUE_COMMENTED"].append((id_to_index[src], id_to_index[dst]))
 
     if "REVIEW" in enabled_interaction_types:
-        # Reviews / approvals
-        rows = neo4j_service.query(PR_REVIEW_APPROVAL_QUERY)
+        # Reviews
+        rows = neo4j_service.query(REVIEW_ON_OTHER_PR_QUERY)
         for row in rows:
             src, dst = row["srcId"], row["dstId"]
             if src in id_to_index and dst in id_to_index:
                 edges["REVIEW"].append((id_to_index[src], id_to_index[dst]))
 
+    if "APPROVED" in enabled_interaction_types:
+        # Aprovações explícitas de PRs por outros autores
+        rows = neo4j_service.query(APPROVED_OTHER_PR_QUERY)
+        for row in rows:
+            src, dst = row["srcId"], row["dstId"]
+            if src in id_to_index and dst in id_to_index:
+                edges["APPROVED"].append((id_to_index[src], id_to_index[dst]))
+
     if "MERGE" in enabled_interaction_types:
         # Merges
-        rows = neo4j_service.query(PR_MERGE_QUERY)
+        rows = neo4j_service.query(MERGED_OTHER_PR_QUERY)
         for row in rows:
             src, dst = row["srcId"], row["dstId"]
             if src in id_to_index and dst in id_to_index:
