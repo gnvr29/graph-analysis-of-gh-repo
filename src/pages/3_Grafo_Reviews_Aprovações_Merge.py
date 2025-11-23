@@ -28,10 +28,9 @@ def app():
     """)
 
     PAGE_ID = "reviews" 
-    # GRAFO ATIVO/FILTRADO (usado para análise e visualização)
     ACTIVE_GRAPH_KEY = "graph_obj"
-    # GRAFO COMPLETO (fonte de dados para re-filtragem)
     FULL_GRAPH_KEY = f"full_{PAGE_ID}_obj"
+    FILTER_STATE_KEY = f"{PAGE_ID}_current_filter_state"
     
     if 'current_graph_id' not in st.session_state:
         st.session_state.current_graph_id = PAGE_ID
@@ -58,6 +57,8 @@ def app():
     filter_with_edges = st.sidebar.checkbox("Mostrar apenas autores com interações", value=True, key=f"{PAGE_ID}_filter_edges")
     limit = st.sidebar.number_input("Limitar autores (0 = sem limite)", min_value=0, value=0, step=10, key=f"{PAGE_ID}_limit")
     st.session_state[f"{PAGE_ID}_current_author_limit"] = limit
+    
+    current_filter_state = (filter_with_edges, limit)
     
     # --- LÓGICA DE CONEXÃO ---
     try:
@@ -96,8 +97,9 @@ def app():
                 st.session_state.total_vertex_count = vertex_count_full # Contagem total
                 st.session_state.current_graph_id = PAGE_ID
                 
-                # Reseta o grafo ativo para que o filtro seja aplicado na próxima iteração
                 st.session_state[ACTIVE_GRAPH_KEY] = None
+                st.session_state[FILTER_STATE_KEY] = None 
+
 
             except Exception as e:
                 st.error(f"Ocorreu um erro ao gerar o grafo: {e}")
@@ -111,49 +113,48 @@ def app():
 
     if full_graph is not None and st.session_state.current_graph_id == PAGE_ID:
         
-        # 1. Lógica de Filtro: Obtém a lista de índices ORIGINAIS a serem incluídos
-        indices_to_render_original = visualization_filters(
-            graph=full_graph, 
-            filter_with_edges=filter_with_edges, 
-            limit=limit, 
-            idx_to_name_full=idx_to_name_full
-        )
-        
-        # 2. Constrói o Grafo ATIVO/FILTRADO (apenas se houver vértices para renderizar)
-        if indices_to_render_original:
-            active_graph = graph_service.build_filtered_graph(
-                full_graph=full_graph, 
-                indices_to_include=indices_to_render_original
-            )
-            st.session_state[ACTIVE_GRAPH_KEY] = active_graph
-            
-            # 3. Cria o novo mapeamento (Novo Índice -> Nome)
-            new_idx_to_name_map = {
-                new_idx: idx_to_name_full[original_idx] 
-                for new_idx, original_idx in enumerate(indices_to_render_original)
-            }
-            # O grafo ativo usa AGORA o novo mapeamento de índices (0, 1, 2...)
-            st.session_state.idx_to_name_map = new_idx_to_name_map
-            # indices_to_render_internal agora é uma lista sequencial [0, 1, 2, ..., N-1]
-            st.session_state.indices_to_render_internal = list(new_idx_to_name_map.keys())
-        else:
-            # Caso não haja vértices após a filtragem
-            st.session_state[ACTIVE_GRAPH_KEY] = None
-            st.session_state.idx_to_name_map = {}
-            st.session_state.indices_to_render_internal = []
+        if st.session_state.get(ACTIVE_GRAPH_KEY) is None or st.session_state.get(FILTER_STATE_KEY) != current_filter_state:
 
-        # Pega o grafo ATIVO para renderização e análise
+            # 1. Lógica de Filtro: Obtém a lista de índices ORIGINAIS a serem incluídos
+            indices_to_render_original = visualization_filters(
+                graph=full_graph, 
+                filter_with_edges=filter_with_edges, 
+                limit=limit, 
+                idx_to_name_full=idx_to_name_full
+            )
+            
+            # 2. Constrói o Grafo ATIVO/FILTRADO (apenas se houver vértices para renderizar)
+            if indices_to_render_original:
+                active_graph = graph_service.build_filtered_graph(
+                    full_graph=full_graph, 
+                    indices_to_include=indices_to_render_original
+                )
+                st.session_state[ACTIVE_GRAPH_KEY] = active_graph
+                
+                # 3. Cria o novo mapeamento (Novo Índice -> Nome)
+                new_idx_to_name_map = {
+                    new_idx: idx_to_name_full[original_idx] 
+                    for new_idx, original_idx in enumerate(indices_to_render_original)
+                }
+                st.session_state.idx_to_name_map = new_idx_to_name_map
+                st.session_state.indices_to_render_internal = list(new_idx_to_name_map.keys())
+            else:
+                st.session_state[ACTIVE_GRAPH_KEY] = None
+                st.session_state.idx_to_name_map = {}
+                st.session_state.indices_to_render_internal = []
+                
+            st.session_state[FILTER_STATE_KEY] = current_filter_state
+
+
         graph = st.session_state.get(ACTIVE_GRAPH_KEY)
         idx_to_name = st.session_state.get("idx_to_name_map", {})
         indices_to_render_internal = st.session_state.get("indices_to_render_internal", [])
         total_vertex_count = st.session_state.get("total_vertex_count", 0)
 
-        # Se o grafo ativo não for None
         if graph:
             st.success(
                 f"Grafo ativo (filtrado) gerado com sucesso usando: **{type(graph).__name__}**")
 
-            # A contagem de vértices é do grafo ATIVO/FILTRADO
             current_vertex_count = graph.getVertexCount()
 
             # --- RENDERIZAÇÃO EM ABAS ---
