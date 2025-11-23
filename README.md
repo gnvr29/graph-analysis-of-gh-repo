@@ -45,4 +45,27 @@ Ele foi desenvolvido para **modelar as informações que serão armazenadas no b
 🔗 **Visualize melhor o diagrama no Figma:**  
 [Figma – Diagrama de Classes](https://www.figma.com/board/POTmm00hPMjJvgaLPOVVSI/Diagrama-de-Classes---Grafos?node-id=0-1&t=rnLFH9P9kcigVyCU-1)
 
-  <div/>
+</div>
+
+---
+    
+### Diagrama de Componentes
+
+O diagrama de componentes abaixo representa a **arquitetura geral do sistema**, evidenciando como os principais módulos internos se relacionam com serviços externos, como a **API do GitHub**, o **Repositório do Streamlit**, o **banco de dados Neo4j** e as próprias páginas renderezidas pelo **Streamlit**.
+
+Ele foi desenvolvido para descrever o fluxo completo de obtenção, processamento, armazenamento e visualização das informações, desde a coleta dos dados até a entrega das métricas e visualizações na **interface Streamlit**.
+
+> Cada área do diagrama destaca um conjunto de responsabilidades
+
+<img src="https://github.com/gnvr29/graph-analysis-of-gh-repo/blob/main/diagramas/Diagrama_de_Componentes.jpg"/>
+
+<div align="center">
+  
+🔗 **Visualize melhor o diagrama no Figma:**  
+[Figma – Diagrama de Componentes](https://www.figma.com/design/5rYh43TnhMNtONOzHeIlur/UML-Class-Diagram-Components--Community-?node-id=0-1&t=FnsYxDbW9IDD2ukM-1)
+
+</div>
+
+
+  
+
