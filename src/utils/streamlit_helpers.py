@@ -81,7 +81,7 @@ def propriedades_gerais():
             e_count = graph_service.get_edge_count()
             
             # Recupera a contagem total de vértices do grafo COMPLETO para contexto
-            total_v_count = st.session_state.get("total_vertex_count", v_count)
+            full_graph = st.session_state.get(f"full_{st.session_state.get('current_graph_id', 'default')}_obj")
 
             st.metric("Vértices (Ativo)", f"{v_count}")
             st.metric("Arestas (Ativo)", e_count)
@@ -123,18 +123,30 @@ def analise_arestas(vertex_names, name_to_idx):
                 u_idx = name_to_idx[u_name]
                 v_idx = name_to_idx[v_name]
 
-                if graph_service.has_edge(u_idx, v_idx):
-                    weight = graph_service.get_edge_weight(u_idx, v_idx)
-                    st.success(f"Sim, ({u_name}, {v_name}) existe (Peso: {weight:.1f}).")
-                else:
-                    st.error(f"Não, ({u_name}, {v_name}) não existe.")
+                is_sucessor_uv = graph_service.is_successor(u_idx, v_idx)
 
-                # Verifica aresta inversa
-                if graph_service.has_edge(v_idx, u_idx):
-                    weight_inv = graph_service.get_edge_weight(v_idx, u_idx)
-                    st.info(f"Sim, ({v_name}, {u_name}) existe (Peso: {weight_inv:.1f}).")
+                if is_sucessor_uv:
+                    weight = graph_service.get_edge_weight(u_idx, v_idx)
+                    st.success(f"Sim, ({u_name}, {v_name}) existe (Sucessor). Peso: {weight:.1f}.")
                 else:
-                    st.info(f"Não, ({v_name}, {u_name}) não existe.")
+                    st.error(f"Não, ({u_name}, {v_name}) não existe (Não é Sucessor).")
+
+                is_predecessor_uv = graph_service.is_predecessor(u_idx, v_idx)
+                
+                if is_predecessor_uv:
+                    weight_inv = graph_service.get_edge_weight(v_idx, u_idx)
+                    st.info(f"Sim, ({v_name}, {u_name}) existe ({u_name} é Predecessor de {v_name}). Peso: {weight_inv:.1f}.")
+                else:
+                    st.info(f"Não, ({v_name}, {u_name}) não existe (Não é Predecessor).")
+
+                is_u_incident = graph_service.is_incident(u_idx, v_idx, u_idx)
+                is_v_incident = graph_service.is_incident(u_idx, v_idx, v_idx)
+                
+                st.markdown("---")
+                st.caption(f"Incidência em ({u_name}, {v_name}):")
+                st.markdown(f"**{u_name}** é incidente: {'Sim' if is_u_incident else 'Não'}")
+                st.markdown(f"**{v_name}** é incidente: {'Sim' if is_v_incident else 'Não'}")
+
 
             except Exception as e:
                 st.error(f"Erro: {e}")
@@ -200,11 +212,47 @@ def modificar_grafo(vertex_names, name_to_idx, idx_to_name):
     with st.sidebar.expander("Modificar Grafo"):
         st.warning("Modificações afetam o grafo em memória.")
 
+        _set_vertex_weight(vertex_names, name_to_idx)
+
         _add_edge(vertex_names, name_to_idx)
 
         _remove_edge(vertex_names, name_to_idx)
 
         _add_vertex(idx_to_name)
+
+def _set_vertex_weight(vertex_names, name_to_idx):
+    """ Define o peso de um vértice no grafo ATIVO. """
+    
+    st.subheader("Alterar Peso do Vértice")
+    v_name = st.selectbox("Vértice:", vertex_names, key="sb_v_set_weight")
+    
+    current_weight = 1.0
+    
+    try:
+        if v_name:
+            v_idx = name_to_idx.get(v_name)
+            if v_idx is not None:
+                current_weight = graph_service.get_vertex_weight(v_idx)
+                st.caption(f"Peso atual de {v_name}: **{current_weight:.2f}**")
+            else:
+                st.caption("Selecione um vértice válido.")
+    except Exception:
+        st.caption("Aguardando seleção ou erro de peso.")
+
+    with st.form("form_set_vertex_weight"):
+        new_weight = st.number_input("Novo Peso:", min_value=0.0, value=current_weight, step=0.1, key="num_v_new_weight")
+        
+        submitted = st.form_submit_button("Definir Novo Peso")
+        
+        if submitted:
+            try:
+                v_idx = name_to_idx[v_name]
+                graph_service.set_vertex_weight(v_idx, new_weight)
+                st.success(f"Peso do vértice '{v_name}' definido como {new_weight:.2f}.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao definir peso do vértice: {e}")
+
 
 def exportar_grafo():
     """ Exporta o grafo ATIVO para GEXF. """
@@ -230,12 +278,44 @@ def exportar_grafo():
 
 def _add_edge(vertex_names, name_to_idx):
     """ Adiciona ou atualiza uma aresta usando índices ATIVOS. """
+    
+    st.subheader("Adicionar / Atualizar Aresta")
+    
+    u_name_add = st.selectbox("Origem (u):", vertex_names, key="sb_u_add")
+    v_name_add = st.selectbox("Destino (v):", vertex_names, key="sb_v_add")
+    
+    current_weight = 1.0
+    
+    try:
+        u = name_to_idx.get(u_name_add)
+        v = name_to_idx.get(v_name_add)
+        
+        if u is not None and v is not None:
+            
+            if graph_service.has_edge(u, v):
+                current_weight = graph_service.get_edge_weight(u, v)
+                st.caption(f"Peso atual de ({u_name_add} -> {v_name_add}): **{current_weight:.2f}** (Aresta Existente)")
+            else:
+                if graph_service.has_edge(v, u):
+                    reverse_weight = graph_service.get_edge_weight(v, u)
+                    st.caption(f"A aresta ({u_name_add} -> {v_name_add}) não existe. OBS: A inversa ({v_name_add} -> {u_name_add}) tem peso {reverse_weight:.2f}.")
+                else:
+                    st.caption(f"Aresta ({u_name_add} -> {v_name_add}) não existe. Nova com peso padrão (1.0).")
+
+            
+    except Exception:
+        current_weight = 1.0
+        st.caption("Selecione a Origem e Destino para verificar o peso atual.")
+    
     with st.form("form_add_edge"):
-        st.subheader("Adicionar / Atualizar Aresta")
-        # Usa vertex_names (nomes dos vértices ativos)
-        u_name_add = st.selectbox("Origem (u):", vertex_names, key="sb_u_add")
-        v_name_add = st.selectbox("Destino (v):", vertex_names, key="sb_v_add")
-        weight_add = st.number_input("Peso:", min_value=0.1, value=1.0, step=0.1)
+        
+        new_weight = st.number_input(
+            "Novo Peso:", 
+            min_value=0.1, 
+            value=current_weight, 
+            step=0.1, 
+            key="num_e_new_weight"
+        )
         
         submitted_add = st.form_submit_button("Adicionar/Atualizar Aresta")
         if submitted_add:
@@ -244,17 +324,25 @@ def _add_edge(vertex_names, name_to_idx):
                 u = name_to_idx[u_name_add]
                 v = name_to_idx[v_name_add]
                 
-                # A função graph_service.add_edge opera no grafo ATIVO (índices 0..N-1)
-                graph_service.add_edge(u, v, weight_add)
+                if graph_service.has_edge(u, v):
+                    graph_service.set_edge_weight(u, v, new_weight)
+                    st.session_state["last_added_edge"] = (u, v) # Mantém o highlight
+                    st.success(f"Peso da aresta ({u_name_add}, {v_name_add}) atualizado para {new_weight:.2f}.")
+                    st.rerun() 
+                else:
+                    edge_added = graph_service.add_edge(u, v, new_weight) 
 
-                # Atualiza highlight (usa índices ATIVOS)
-                st.session_state["last_added_edge"] = (u, v)
-                st.session_state["last_added_vertex"] = None
+                    if edge_added:
+                        st.session_state["last_added_edge"] = (u, v)
+                        st.session_state["last_added_vertex"] = None
 
-                st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada/atualizada com peso {weight_add}.")
-                st.rerun() 
+                        st.success(f"Aresta ({u_name_add}, {v_name_add}) adicionada com peso {new_weight:.2f}.")
+                        st.rerun() 
+                    else:
+                        st.warning(f"Aresta ({u_name_add}, {v_name_add}) não foi adicionada. É possível que os vértices sejam os mesmos (laço) ou outra restrição.")
+
             except Exception as e:
-                st.error(f"Erro ao adicionar aresta: {e}")
+                st.error(f"Erro ao adicionar/atualizar aresta: {e}")
 
 def _remove_edge(vertex_names, name_to_idx):
     """ Remove uma aresta usando índices ATIVOS. """
@@ -304,6 +392,7 @@ def _add_vertex(idx_to_name):
                 # name_to_idx_map: Nome -> Índice ATIVO (necessário para os selects)
                 st.session_state.name_to_idx_map[vertex_name] = new_active_index
                 # idx_to_name_map: Índice ATIVO -> Nome (passado como argumento)
+                # OBS: Em addVertex o peso é inicializado em 0.0 na classe AbstractGraph
                 idx_to_name[new_active_index] = vertex_name
                 
                 # Adiciona o nome à lista de nomes (vertex_names_list)

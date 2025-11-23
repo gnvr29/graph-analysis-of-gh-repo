@@ -76,6 +76,10 @@ class AbstractGraph(ABC):
         """Verifica se o vértice x é incidente à aresta (u, v)."""
         self._validate_edge_vertices(u, v)
         self._validate_vertex(x)
+
+        if not self.hasEdge(u, v):
+            return False
+        
         return x == u or x == v
 
     @abstractmethod

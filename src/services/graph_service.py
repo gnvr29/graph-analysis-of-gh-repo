@@ -270,7 +270,7 @@ def draw_graph(graph: AbstractGraph, idx_to_name: dict, indices_to_render: list,
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
 
-                if (u, v) in highlight_edges or (v, u) in highlight_edges:
+                if (u, v) in highlight_edges:
                     color = "red"
                     alpha = 0.9
                     lw = 3
